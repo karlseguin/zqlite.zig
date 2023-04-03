@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) !void {
 		.target = target,
 		.optimize = optimize,
 	});
+	lib_test.linkSystemLibrary("c");
 	addLibs(lib_test);
 
 	const run_test = b.addRunArtifact(lib_test);
