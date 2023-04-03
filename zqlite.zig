@@ -1,0 +1,769 @@
+const std = @import("std");
+const t = std.testing;
+const c = @cImport(@cInclude("sqlite3.h"));
+
+pub const OpenFlags = struct {
+	pub const Create = c.SQLITE_OPEN_CREATE;
+	pub const DeleteOnClose = c.SQLITE_OPEN_DELETEONCLOSE;
+	pub const Exclusive = c.SQLITE_OPEN_EXCLUSIVE;
+	pub const AutoProxy = c.SQLITE_OPEN_AUTOPROXY;
+	pub const Uri = c.SQLITE_OPEN_URI;
+	pub const Memory = c.SQLITE_OPEN_MEMORY;
+	pub const MainDB = c.SQLITE_OPEN_MAIN_DB;
+	pub const TempDB = c.SQLITE_OPEN_TEMP_DB;
+	pub const TransientDB = c.SQLITE_OPEN_TRANSIENT_DB;
+	pub const MainJournal = c.SQLITE_OPEN_MAIN_JOURNAL;
+	pub const TempJournal = c.SQLITE_OPEN_TEMP_JOURNAL;
+	pub const SubJournal = c.SQLITE_OPEN_SUBJOURNAL;
+	pub const SuperJournal = c.SQLITE_OPEN_SUPER_JOURNAL;
+	pub const NoMutex = c.SQLITE_OPEN_NOMUTEX;
+	pub const FullMutex = c.SQLITE_OPEN_FULLMUTEX;
+	pub const SharedCache = c.SQLITE_OPEN_SHAREDCACHE;
+	pub const PrivateCache = c.SQLITE_OPEN_PRIVATECACHE;
+	pub const OpenWAL = c.SQLITE_OPEN_WAL;
+	pub const NoFollow = c.SQLITE_OPEN_NOFOLLOW;
+	pub const EXResCode = c.SQLITE_OPEN_EXRESCODE;
+};
+
+pub fn open(path: [*:0]const u8, read_only: bool, flags: c_int) !Conn {
+	return Conn.init(path, read_only, flags);
+}
+
+pub const Conn = struct {
+	conn: *c.sqlite3,
+
+	pub fn init(path: [*:0]const u8, read_only: bool, flags: c_int) !Conn {
+		var full_flags = flags;
+		// one of these flags is required, so we require an explicit parameter,
+		// read_only, to make this requirement explicit
+		if (read_only) {
+			full_flags |= c.SQLITE_OPEN_READONLY;
+		} else {
+			full_flags |= c.SQLITE_OPEN_READWRITE;
+		}
+		var conn: ?*c.sqlite3 = null;
+		const rc = c.sqlite3_open_v2(path, &conn, full_flags, null);
+		if (rc != c.SQLITE_OK) {
+			return errorFromCode(rc);
+		}
+		return .{.conn = conn.?};
+	}
+
+	pub fn deinit(self: Conn) void {
+		_ = c.sqlite3_close_v2(self.conn);
+	}
+
+	// in case someone cares about getting this error
+	pub fn deinitErr(self: Conn) !void {
+		const rc = c.sqlite3_close_v2(self.conn);
+		if (rc != c.SQLITE_OK) {
+			return errorFromCode(rc);
+		}
+	}
+
+	pub fn exec(self: Conn, sql: []const u8, values: anytype) !void {
+		const stmt = try self.prepare(sql, values);
+		defer stmt.deinit();
+		try stmt.stepToCompletion();
+	}
+
+	pub fn execNoArgs(self: Conn, sql: [*:0]const u8) !void {
+		const rc = c.sqlite3_exec(self.conn, sql, null, null, null);
+		if (rc != c.SQLITE_OK) {
+			return errorFromCode(rc);
+		}
+	}
+
+	pub fn prepare(self: Conn, sql: []const u8, values: anytype) !Stmt {
+		var n_stmt: ?*c.sqlite3_stmt = null;
+		var rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(c_int, sql.len), &n_stmt, null);
+		if (rc != c.SQLITE_OK) {
+			return errorFromCode(rc);
+		}
+
+		// const column_count = @intCast(usize, c.sqlite3_column_count(stmt))l
+
+		const stmt = n_stmt.?;
+		if (values.len > 0) {
+			inline for (values, 0..) |value, i| {
+				try bindValue(@TypeOf(value), stmt, value, i + 1);
+			}
+		}
+
+		return .{
+			.stmt = stmt,
+			.conn = self.conn,
+		};
+	}
+
+	pub fn changes(self: Conn) usize {
+		return @intCast(usize, c.sqlite3_changes(self.conn));
+	}
+
+	pub fn lastInsertedRowId(self: Conn) i64 {
+		return @intCast(i64, c.sqlite3_last_insert_rowid(self.conn));
+	}
+
+	pub fn row(self: Conn, sql: []const u8, values: anytype) !?Row {
+		const stmt = try self.prepare(sql, values);
+		if (try stmt.step() == false) {
+			return null;
+		}
+		return .{.stmt = stmt};
+	}
+
+	pub fn rows(self: Conn, sql: []const u8, values: anytype) !Rows {
+		const stmt = try self.prepare(sql, values);
+		return .{.stmt = stmt, .err = null};
+	}
+
+	pub fn transaction(self: Conn) !void {
+		return self.execNoArgs("begin");
+	}
+
+	pub fn exclusiveTransaction(self: Conn) !void {
+		return self.execNoArgs("begin exclusive");
+	}
+
+	pub fn commit(self: Conn) !void {
+		try self.execNoArgs("commit");
+	}
+
+	pub fn rollback(self: Conn) void {
+		self.execNoArgs("rollback") catch {};
+	}
+
+	pub fn lastError(self: Conn) [*:0]const u8 {
+		return @as([*:0]const u8, c.sqlite3_errmsg(self.conn));
+	}
+};
+
+fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index: c_int) !void {
+	var rc: c_int = 0;
+
+	switch (@typeInfo(T)) {
+		.Null => rc = c.sqlite3_bind_null(stmt, bind_index),
+		.Int, .ComptimeInt => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, value)),
+		.Float, .ComptimeFloat => rc = c.sqlite3_bind_double(stmt, bind_index, value),
+		.Bool => {
+			if (value) {
+				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, 1));
+			} else {
+				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, 0));
+			}
+		},
+		.Pointer => |ptr| switch (ptr.size) {
+			.One => try bindValue(ptr.child, stmt, value, bind_index),
+			.Slice => switch (ptr.child) {
+				u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(c_int, value.len), c.SQLITE_STATIC),
+				else => bindError(T),
+			},
+			else => bindError(T),
+		},
+		.Array => |arr| switch (arr.child) {
+			u8 => rc = c.sqlite3_bind_text(stmt, bind_index, @ptrCast([*c]const u8, value), @intCast(c_int, value.len), c.SQLITE_STATIC),
+			else => bindError(T),
+		},
+		.Optional => |opt| {
+			if (value) |v| {
+				try bindValue(opt.child, stmt, v, bind_index);
+			} else {
+				rc = c.sqlite3_bind_null(stmt, bind_index);
+			}
+		},
+		else => bindError(T),
+	}
+
+	if (rc != c.SQLITE_OK) {
+		return errorFromCode(rc);
+	}
+}
+
+fn bindError(comptime T: type) void {
+	@compileError("cannot bind value of type " ++ @typeName(T));
+}
+
+pub const Stmt = struct {
+	conn: *c.sqlite3,
+	stmt: *c.sqlite3_stmt,
+
+	pub fn deinit(self: Stmt) void {
+		_ = c.sqlite3_finalize(self.stmt);
+	}
+
+	pub fn deinitErr(self: Stmt) !void {
+		const rc = c.sqlite3_finalize(self.stmt);
+		if (rc != c.SQLITE_OK) {
+			return errorFromCode(rc);
+		}
+	}
+
+	pub fn step(self: Stmt) !bool {
+		const s = self.stmt;
+		const rc = c.sqlite3_step(s);
+		if (rc == c.SQLITE_DONE) {
+			return false;
+		}
+		if (rc != c.SQLITE_ROW) {
+			return errorFromCode(rc);
+		}
+		return true;
+	}
+
+	pub fn stepToCompletion(self: Stmt) !void {
+		const stmt = self.stmt;
+		while (true) {
+			switch (c.sqlite3_step(stmt)) {
+				c.SQLITE_DONE => return,
+				c.SQLITE_ROW => continue,
+				else => |rc| return errorFromCode(rc),
+			}
+		}
+	}
+
+	pub fn boolean(self: Stmt, index: usize) bool {
+		return self.int(index) == 1;
+	}
+	pub fn nullableBoolean(self: Stmt, index: usize) ?bool {
+		const n = self.nullableInt(index) orelse return null;
+		return n == 1;
+	}
+
+	pub fn int(self: Stmt, index: usize) i64 {
+		return @intCast(i64, c.sqlite3_column_int64(self.stmt, @intCast(c_int, index)));
+	}
+	pub fn nullableInt(self: Stmt, index: usize) ?i64 {
+		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+			return null;
+		}
+		return self.int(index);
+	}
+
+	pub fn float(self: Stmt, index: usize) f64 {
+		return @floatCast(f64, c.sqlite3_column_double(self.stmt, @intCast(c_int, index)));
+	}
+	pub fn nullableFloat(self: Stmt, index: usize) ?f64 {
+		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+			return null;
+		}
+		return self.float(index);
+	}
+
+	pub fn text(self: Stmt, index: usize) []const u8 {
+		const stmt = self.stmt;
+		const c_index = @intCast(c_int, index);
+		const len = c.sqlite3_column_bytes(stmt, c_index);
+		if (len == 0) {
+			return "";
+		}
+
+		const data = c.sqlite3_column_text(stmt, c_index);
+		return @ptrCast([*c]const u8, data)[0..@intCast(usize, len)];
+	}
+	pub fn nullableText(self: Stmt, index: usize) ?[]const u8 {
+		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+			return null;
+		}
+		return self.text(index);
+	}
+
+	pub fn blob(self: Stmt, index: usize) []const u8 {
+		const stmt = self.stmt;
+		const c_index = @intCast(c_int, index);
+		const len = c.sqlite3_column_bytes(stmt, c_index);
+		if (len == 0) {
+			return "";
+		}
+
+		const data = c.sqlite3_column_blob(stmt, c_index);
+		return @ptrCast([*c]const u8, data)[0..@intCast(usize, len)];
+	}
+	pub fn nullableBlob(self: Stmt, index: usize) ?[]const u8 {
+		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+			return null;
+		}
+		return self.blob(index);
+	}
+};
+
+pub const Row = struct {
+	stmt: Stmt,
+
+	pub fn deinit(self: Row) void {
+		self.stmt.deinit();
+	}
+
+	pub fn deinitErr(self: Stmt) !void {
+		return self.stmt.deinitErr();
+	}
+
+	pub fn boolean(self: Row, index: usize) bool {
+		return self.stmt.boolean(index);
+	}
+	pub fn nullableBoolean(self: Row, index: usize) ?bool {
+		return self.stmt.nullableBoolean(index);
+	}
+
+	pub fn int(self: Row, index: usize) i64 {
+		return self.stmt.int(index);
+	}
+	pub fn nullableInt(self: Row, index: usize) ?i64 {
+		return self.stmt.nullableInt(index);
+	}
+
+	pub fn float(self: Row, index: usize) f64 {
+		return self.stmt.float(index);
+	}
+	pub fn nullableFloat(self: Row, index: usize) ?f64 {
+		return self.stmt.nullableFloat(index);
+	}
+
+	pub fn text(self: Row, index: usize) []const u8 {
+		return self.stmt.text(index);
+	}
+	pub fn nullableText(self: Row, index: usize) ?[]const u8 {
+		return self.stmt.nullableText(index);
+	}
+
+	pub fn blob(self: Row, index: usize) []const u8 {
+		return self.stmt.blob(index);
+	}
+	pub fn nullableBlob(self: Row, index: usize) ?[]const u8 {
+		return self.stmt.nullableBlob(index);
+	}
+};
+
+pub const Rows = struct {
+	stmt: Stmt,
+	err: ?anyerror,
+
+	pub fn deinit(self: Rows) void {
+		self.stmt.deinit();
+	}
+
+	pub fn deinitErr(self: Rows) !void {
+		return self.stmt.deinitErr();
+	}
+
+	pub fn next(self: *Rows) ?Row {
+		if (self.err != null) {
+			return null;
+		}
+
+		const stmt = self.stmt;
+		const has_data = stmt.step() catch |err| {
+			self.err = err;
+			return null;
+		};
+
+		if (!has_data) {
+			return null;
+		}
+
+		return .{.stmt = stmt};
+	}
+};
+
+fn errorFromCode(result: c_int) anyerror {
+	return switch (result) {
+		c.SQLITE_ABORT => error.Abort,
+		c.SQLITE_AUTH => error.Auth,
+		c.SQLITE_BUSY => error.Busy,
+		c.SQLITE_CANTOPEN => error.CantOpen,
+		c.SQLITE_CONSTRAINT => error.Constraint,
+		c.SQLITE_CORRUPT => error.Corrupt,
+		c.SQLITE_EMPTY => error.Empty,
+		c.SQLITE_ERROR => error.Error,
+		c.SQLITE_FORMAT => error.Format,
+		c.SQLITE_FULL => error.Full,
+		c.SQLITE_INTERNAL => error.Internal,
+		c.SQLITE_INTERRUPT => error.Interrupt,
+		c.SQLITE_IOERR => error.IoErr,
+		c.SQLITE_LOCKED => error.Locked,
+		c.SQLITE_MISMATCH => error.Mismatch,
+		c.SQLITE_MISUSE => error.Misuse,
+		c.SQLITE_NOLFS => error.NoLFS,
+		c.SQLITE_NOMEM => error.NoMem,
+		c.SQLITE_NOTADB => error.NotADB,
+		c.SQLITE_NOTFOUND => error.Notfound,
+		c.SQLITE_NOTICE => error.Notice,
+		c.SQLITE_PERM => error.Perm,
+		c.SQLITE_PROTOCOL => error.Protocol,
+		c.SQLITE_RANGE => error.Range,
+		c.SQLITE_READONLY => error.ReadOnly,
+		c.SQLITE_SCHEMA => error.Schema,
+		c.SQLITE_TOOBIG => error.TooBig,
+		c.SQLITE_WARNING => error.Warning,
+
+		// extended codes:
+		c.SQLITE_ERROR_MISSING_COLLSEQ => error.ErrorMissingCollseq,
+		c.SQLITE_ERROR_RETRY => error.ErrorRetry,
+		c.SQLITE_ERROR_SNAPSHOT => error.ErrorSnapshot,
+		c.SQLITE_IOERR_READ => error.IoerrRead,
+		c.SQLITE_IOERR_SHORT_READ => error.IoerrShortRead,
+		c.SQLITE_IOERR_WRITE => error.IoerrWrite,
+		c.SQLITE_IOERR_FSYNC => error.IoerrFsync,
+		c.SQLITE_IOERR_DIR_FSYNC => error.IoerrDir_fsync,
+		c.SQLITE_IOERR_TRUNCATE => error.IoerrTruncate,
+		c.SQLITE_IOERR_FSTAT => error.IoerrFstat,
+		c.SQLITE_IOERR_UNLOCK => error.IoerrUnlock,
+		c.SQLITE_IOERR_RDLOCK => error.IoerrRdlock,
+		c.SQLITE_IOERR_DELETE => error.IoerrDelete,
+		c.SQLITE_IOERR_BLOCKED => error.IoerrBlocked,
+		c.SQLITE_IOERR_NOMEM => error.IoerrNomem,
+		c.SQLITE_IOERR_ACCESS => error.IoerrAccess,
+		c.SQLITE_IOERR_CHECKRESERVEDLOCK => error.IoerrCheckreservedlock ,
+		c.SQLITE_IOERR_LOCK => error.IoerrLock,
+		c.SQLITE_IOERR_CLOSE => error.IoerrClose,
+		c.SQLITE_IOERR_DIR_CLOSE => error.IoerrDirClose,
+		c.SQLITE_IOERR_SHMOPEN => error.IoerrShmopen,
+		c.SQLITE_IOERR_SHMSIZE => error.IoerrShmsize,
+		c.SQLITE_IOERR_SHMLOCK => error.IoerrShmlock,
+		c.SQLITE_IOERR_SHMMAP => error.ioerrshmmap,
+		c.SQLITE_IOERR_SEEK => error.IoerrSeek,
+		c.SQLITE_IOERR_DELETE_NOENT => error.IoerrDeleteNoent,
+		c.SQLITE_IOERR_MMAP => error.IoerrMmap,
+		c.SQLITE_IOERR_GETTEMPPATH => error.IoerrGetTempPath,
+		c.SQLITE_IOERR_CONVPATH => error.IoerrConvPath,
+		c.SQLITE_IOERR_VNODE => error.IoerrVnode,
+		c.SQLITE_IOERR_AUTH => error.IoerrAuth,
+		c.SQLITE_IOERR_BEGIN_ATOMIC => error.IoerrBeginAtomic,
+		c.SQLITE_IOERR_COMMIT_ATOMIC => error.IoerrCommitAtomic,
+		c.SQLITE_IOERR_ROLLBACK_ATOMIC => error.IoerrRollbackAtomic,
+		c.SQLITE_IOERR_DATA => error.IoerrData,
+		c.SQLITE_IOERR_CORRUPTFS => error.IoerrCorruptFS,
+		c.SQLITE_LOCKED_SHAREDCACHE => error.LockedSharedCache,
+		c.SQLITE_LOCKED_VTAB => error.LockedVTab,
+		c.SQLITE_BUSY_RECOVERY => error.BusyRecovery,
+		c.SQLITE_BUSY_SNAPSHOT => error.BusySnapshot,
+		c.SQLITE_BUSY_TIMEOUT => error.BusyTimeout,
+		c.SQLITE_CANTOPEN_NOTEMPDIR => error.CantOpenNoTempDir,
+		c.SQLITE_CANTOPEN_ISDIR => error.CantOpenIsDir,
+		c.SQLITE_CANTOPEN_FULLPATH => error.CantOpenFullPath,
+		c.SQLITE_CANTOPEN_CONVPATH => error.CantOpenConvPath,
+		c.SQLITE_CANTOPEN_DIRTYWAL => error.CantOpenDirtyWal,
+		c.SQLITE_CANTOPEN_SYMLINK => error.CantOpenSymlink,
+		c.SQLITE_CORRUPT_VTAB => error.CorruptVTab,
+		c.SQLITE_CORRUPT_SEQUENCE => error.CorruptSequence,
+		c.SQLITE_CORRUPT_INDEX => error.CorruptIndex,
+		c.SQLITE_READONLY_RECOVERY => error.ReadonlyRecovery,
+		c.SQLITE_READONLY_CANTLOCK => error.ReadonlyCantlock,
+		c.SQLITE_READONLY_ROLLBACK => error.ReadonlyRollback,
+		c.SQLITE_READONLY_DBMOVED => error.ReadonlyDbMoved,
+		c.SQLITE_READONLY_CANTINIT => error.ReadonlyCantInit,
+		c.SQLITE_READONLY_DIRECTORY => error.ReadonlyDirectory,
+		c.SQLITE_ABORT_ROLLBACK => error.AbortRollback,
+		c.SQLITE_CONSTRAINT_CHECK => error.ConstraintCheck,
+		c.SQLITE_CONSTRAINT_COMMITHOOK => error.ConstraintCommithook,
+		c.SQLITE_CONSTRAINT_FOREIGNKEY => error.ConstraintForeignKey,
+		c.SQLITE_CONSTRAINT_FUNCTION => error.ConstraintFunction,
+		c.SQLITE_CONSTRAINT_NOTNULL => error.ConstraintNotNull,
+		c.SQLITE_CONSTRAINT_PRIMARYKEY => error.ConstraintPrimaryKey,
+		c.SQLITE_CONSTRAINT_TRIGGER => error.ConstraintTrigger,
+		c.SQLITE_CONSTRAINT_UNIQUE => error.ConstraintUnique,
+		c.SQLITE_CONSTRAINT_VTAB => error.ConstraintVTab,
+		c.SQLITE_CONSTRAINT_ROWID => error.ConstraintRowId,
+		c.SQLITE_CONSTRAINT_PINNED => error.ConstraintPinned,
+		c.SQLITE_CONSTRAINT_DATATYPE => error.ConstraintDatatype,
+		c.SQLITE_NOTICE_RECOVER_WAL => error.NoticeRecoverWal,
+		c.SQLITE_NOTICE_RECOVER_ROLLBACK => error.NoticeRecoverRollback ,
+		c.SQLITE_WARNING_AUTOINDEX => error.WarningAutoIndex,
+		c.SQLITE_AUTH_USER => error.AuthUser,
+		c.SQLITE_OK_LOAD_PERMANENTLY => error.OkLoadPermanently,
+
+		else => std.debug.panic("{s} {d}", .{c.sqlite3_errstr(result), result}),
+	};
+}
+
+fn isUnique(err: anyerror) bool {
+	return err == error.ConstraintUnique;
+}
+
+test "init: path does not exist" {
+	try t.expectError(error.CantOpen, Conn.init("does_not_exist", false, 0));
+}
+
+test "exec and scan" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	conn.exec(\\
+	\\	insert into test (cint, creal, ctext, cblob)
+	\\	values (?1, ?2, ?3, ?4)
+	, .{-3, 2.2, "three", "four"}) catch unreachable;
+
+	try t.expectEqual(@as(usize, 1), conn.changes());
+
+	const lastId = conn.lastInsertedRowId();
+	const row = queryLast(conn).?;
+	defer row.row.deinit();
+	try t.expectEqual(lastId, row.id);
+	try t.expectEqual(@as(i64, -3), row.int);
+	try t.expectEqual(@as(f64, 2.2), row.real);
+	try t.expectEqualStrings("three", row.text);
+	try t.expectEqualStrings("four", row.blob);
+	try t.expectEqual(@as(?i64, null), row.intn);
+	try t.expectEqual(@as(?f64, null), row.realn);
+	try t.expectEqual(@as(?[]const u8, null), row.textn);
+	try t.expectEqual(@as(?[]const u8, null), row.blobn);
+
+	try conn.exec("delete from test where id = ?", .{lastId});
+	try t.expectEqual(@as(usize, 1), conn.changes());
+	try t.expectEqual(@as(?TestRow, null), queryLast(conn));
+
+	try conn.exec("delete from test where id = ?", .{lastId});
+	try t.expectEqual(@as(usize, 0), conn.changes());
+	try t.expectEqual(@as(?TestRow, null), queryLast(conn));
+}
+
+test "bind null" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	conn.exec(\\
+	\\	insert into test (cintn, crealn, ctextn, cblobn)
+	\\	values (?1, ?2, ?3, ?4)
+	, .{null, null, null, null}) catch unreachable;
+	try t.expectEqual(@as(usize, 1), conn.changes());
+
+	const row = queryLast(conn).?;
+	defer row.row.deinit();
+	try t.expectEqual(@as(?i64, null), row.intn);
+	try t.expectEqual(@as(?f64, null), row.realn);
+	try t.expectEqual(@as(?[]const u8, null), row.textn);
+	try t.expectEqual(@as(?[]const u8, null), row.blobn);
+}
+
+test "bind null optionals" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	var empty = TestRow{};
+
+	conn.exec(\\
+	\\	insert into test (cintn, crealn, ctextn, cblobn)
+	\\	values (?1, ?2, ?3, ?4)
+	, .{empty.intn, empty.realn, empty.textn, empty.blobn}) catch unreachable;
+	try t.expectEqual(@as(usize, 1), conn.changes());
+
+	const row = queryLast(conn).?;
+	defer row.row.deinit();
+	try t.expectEqual(@as(?i64, null), row.intn);
+	try t.expectEqual(@as(?f64, null), row.realn);
+	try t.expectEqual(@as(?[]const u8, null), row.textn);
+	try t.expectEqual(@as(?[]const u8, null), row.blobn);
+}
+
+test "boolean" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	{
+		conn.exec("insert into test (cint, cintn) values (?, ?)", .{true, true}) catch unreachable;
+		const row = (try conn.row("select cint, cintn from test where id = ?", .{conn.lastInsertedRowId()})).?;
+		defer row.deinit();
+
+		try t.expectEqual(true, row.boolean(0));
+		try t.expectEqual(true, row.nullableBoolean(1).?);
+	}
+
+	{
+		conn.execNoArgs("update test set cint = false, cintn = false") catch unreachable;
+		const row = (try conn.row("select cint, cintn from test where id = ?", .{conn.lastInsertedRowId()})).?;
+		defer row.deinit();
+
+		try t.expectEqual(false, row.boolean(0));
+		try t.expectEqual(false, row.nullableBoolean(1).?);
+	}
+
+	{
+		conn.execNoArgs("update test set cintn = null") catch unreachable;
+		const row = (try conn.row("select cintn from test where id = ?", .{conn.lastInsertedRowId()})).?;
+		defer row.deinit();
+
+		try t.expectEqual(@as(?bool, null), row.nullableBoolean(0));
+	}
+}
+
+test "empty string/blob" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	conn.exec(
+		\\ insert into test (ctext, ctextn, cblob, cblobn) values
+		\\ (?1, ?1, ?1, ?1)
+	, .{""}) catch unreachable;
+
+	const row = queryLast(conn).?;
+	defer row.row.deinit();
+	try t.expectEqualStrings("", row.text);
+	try t.expectEqualStrings("", row.textn.?);
+	try t.expectEqualStrings("", row.blob);
+	try t.expectEqualStrings("", row.blobn.?);
+}
+
+test "transaction commit" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	var id1: i64 = 0;
+	var id2: i64 = 0;
+	{
+		try conn.transaction();
+		errdefer conn.rollback();
+
+		conn.exec("insert into test (ctext) values (?)", .{"hello"}) catch unreachable;
+		id1 = conn.lastInsertedRowId();
+
+		conn.exec("insert into test (ctext) values (?)", .{"world"}) catch unreachable;
+		id2 = conn.lastInsertedRowId();
+
+		try conn.commit();
+	}
+
+	const row1 =  queryId(conn, id1).?;
+	defer row1.row.deinit();
+	const row2 =  queryId(conn, id2).?;
+	defer row2.row.deinit();
+
+	try t.expectEqualStrings("hello", row1.text);
+	try t.expectEqualStrings("world", row2.text);
+}
+
+test "transaction rollback" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	var id1: i64 = 0;
+	var id2: i64 = 0;
+	{
+		try conn.transaction();
+		defer conn.rollback();
+
+		conn.exec("insert into test (ctext) values (?)", .{"hello"}) catch unreachable;
+		id1 = conn.lastInsertedRowId();
+
+		conn.exec("insert into test (ctext) values (?)", .{"world"}) catch unreachable;
+		id2 = conn.lastInsertedRowId();
+	}
+
+	// make sure the insert actually happened before we rolledback
+	try t.expectEqual(true, id2 > id1);
+	try t.expectEqual(@as(?TestRow, null), queryId(conn, id1));
+	try t.expectEqual(@as(?TestRow, null), queryId(conn, id2));
+}
+
+test "rows" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	conn.exec(\\
+	\\ insert into test (cint, ctext)
+	\\ values (?1, ?2), (?3, ?4)
+	, .{1, "two", 3, "four"}) catch unreachable;
+	try t.expectEqual(@as(usize, 2), conn.changes());
+
+	var rows = conn.rows("select cint, ctext from test order by cint", .{}) catch unreachable;
+	defer rows.deinit();
+
+	const r1 = rows.next().?;
+	try t.expectEqual(@as(i64, 1), r1.int(0));
+	try t.expectEqualStrings("two", r1.text(1));
+
+	const r2 = rows.next().?;
+	try t.expectEqual(@as(i64, 3), r2.int(0));
+	try t.expectEqualStrings("four", r2.text(1));
+
+	try t.expectEqual(@as(?Row, null), rows.next());
+	try t.expectEqual(@as(?anyerror, null), rows.err);
+}
+
+test "row query error" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+	try t.expectError(error.Error, conn.row("select invalid from test", .{}));
+	try t.expectEqualStrings("no such column: invalid", std.mem.span(conn.lastError()));
+}
+
+test "rows query error" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+	try t.expectError(error.Error, conn.rows("select invalid from test", .{}));
+	try t.expectEqualStrings("no such column: invalid", std.mem.span(conn.lastError()));
+}
+
+test "lastError without error" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+	try t.expectEqualStrings("not an error", std.mem.span(conn.lastError()));
+}
+
+test "isUnique" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	conn.execNoArgs("insert into test (uniq) values (1)") catch unreachable;
+
+	var is_unique = false;
+	conn.execNoArgs("insert into test (uniq) values (1)") catch |err| {
+		is_unique = isUnique(err);
+	};
+	try t.expectEqual(true, is_unique);
+}
+
+fn testDB() Conn {
+	var conn = open(":memory:", false, OpenFlags.Create | OpenFlags.EXResCode) catch unreachable;
+	conn.execNoArgs(\\
+	\\	create table test (
+	\\		id integer primary key not null,
+	\\		cint integer not null default(0),
+	\\		cintn integer null,
+	\\		creal real not null default(0.0),
+	\\		crealn real null,
+	\\		ctext text not null default(''),
+	\\		ctextn text null,
+	\\		cblob blob not null default(''),
+	\\		cblobn blob null,
+	\\		uniq int unique null
+	\\	)
+	) catch unreachable;
+	return conn;
+}
+
+const TestRow = struct {
+	row: Row = undefined,
+	id: i64 = 0,
+	int: i64 = 0,
+	intn: ?i64 = null,
+	real: f64 = 0.0,
+	realn: ?f64 = null,
+	text: []const u8 = "",
+	textn: ?[]const u8 = null,
+	blob: []const u8 = "",
+	blobn: ?[]const u8 = null,
+};
+
+fn queryLast(conn: Conn) ?TestRow {
+	return queryId(conn, conn.lastInsertedRowId());
+}
+
+fn queryId(conn: Conn, id: i64) ?TestRow {
+	const row = conn.row(\\
+	\\ select id, cint, cintn, creal, crealn,
+	\\   ctext, ctextn, cblob, cblobn
+	\\ from test where id = ?
+	, .{id}) catch unreachable orelse return null;
+
+	return .{
+		.row = row,
+		.id = row.int(0),
+		.int = row.int(1),
+		.intn = row.nullableInt(2),
+		.real = row.float(3),
+		.realn = row.nullableFloat(4),
+		.text = row.text(5),
+		.textn = row.nullableText(6),
+		.blob = row.blob(7),
+		.blobn = row.nullableBlob(8),
+	};
+}
