@@ -29,6 +29,16 @@ pub fn open(path: [*:0]const u8, read_only: bool, flags: c_int) !Conn {
 	return Conn.init(path, read_only, flags);
 }
 
+pub fn blob(value: []const u8) Blob {
+	return .{.value = value};
+}
+
+// a marker type so we can tell if the provided []const u8 should be treated as
+// a text or a blob
+pub const Blob = struct {
+	value: []const u8,
+};
+
 pub const Conn = struct {
 	conn: *c.sqlite3,
 
@@ -80,8 +90,6 @@ pub const Conn = struct {
 		if (rc != c.SQLITE_OK) {
 			return errorFromCode(rc);
 		}
-
-		// const column_count = @intCast(usize, c.sqlite3_column_count(stmt))l
 
 		const stmt = n_stmt.?;
 		if (values.len > 0) {
@@ -152,13 +160,15 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
 				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, 0));
 			}
 		},
-		.Pointer => |ptr| switch (ptr.size) {
-			.One => try bindValue(ptr.child, stmt, value, bind_index),
-			.Slice => switch (ptr.child) {
-				u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(c_int, value.len), c.SQLITE_STATIC),
+		.Pointer => |ptr| {
+			switch (ptr.size) {
+				.One => try bindValue(ptr.child, stmt, value, bind_index),
+				.Slice => switch (ptr.child) {
+					u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(c_int, value.len), c.SQLITE_STATIC),
+					else => bindError(T),
+				},
 				else => bindError(T),
-			},
-			else => bindError(T),
+			}
 		},
 		.Array => |arr| switch (arr.child) {
 			u8 => rc = c.sqlite3_bind_text(stmt, bind_index, @ptrCast([*c]const u8, value), @intCast(c_int, value.len), c.SQLITE_STATIC),
@@ -169,6 +179,14 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
 				try bindValue(opt.child, stmt, v, bind_index);
 			} else {
 				rc = c.sqlite3_bind_null(stmt, bind_index);
+			}
+		},
+		.Struct => {
+			if (T == Blob) {
+				const inner = value.value;
+				rc = c.sqlite3_bind_blob(stmt, bind_index, @ptrCast([*c]const u8, inner), @intCast(c_int, inner.len), c.SQLITE_STATIC);
+			} else {
+				bindError(T);
 			}
 		},
 		else => bindError(T),
@@ -252,13 +270,13 @@ pub const Stmt = struct {
 	pub fn text(self: Stmt, index: usize) []const u8 {
 		const stmt = self.stmt;
 		const c_index = @intCast(c_int, index);
+		const data = c.sqlite3_column_text(stmt, c_index);
 		const len = c.sqlite3_column_bytes(stmt, c_index);
 		if (len == 0) {
 			return "";
 		}
-
-		const data = c.sqlite3_column_text(stmt, c_index);
 		return @ptrCast([*c]const u8, data)[0..@intCast(usize, len)];
+
 	}
 	pub fn nullableText(self: Stmt, index: usize) ?[]const u8 {
 		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
@@ -270,12 +288,13 @@ pub const Stmt = struct {
 	pub fn blob(self: Stmt, index: usize) []const u8 {
 		const stmt = self.stmt;
 		const c_index = @intCast(c_int, index);
-		const len = c.sqlite3_column_bytes(stmt, c_index);
-		if (len == 0) {
+
+		const data = c.sqlite3_column_blob(stmt, c_index);
+		if (data == null) {
 			return "";
 		}
 
-		const data = c.sqlite3_column_blob(stmt, c_index);
+		const len = c.sqlite3_column_bytes(stmt, c_index);
 		return @ptrCast([*c]const u8, data)[0..@intCast(usize, len)];
 	}
 	pub fn nullableBlob(self: Stmt, index: usize) ?[]const u8 {
@@ -582,6 +601,47 @@ test "boolean" {
 		defer row.deinit();
 
 		try t.expectEqual(@as(?bool, null), row.nullableBoolean(0));
+	}
+}
+
+test "blob/text" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	{
+		const d1 = [_]u8{0, 1, 2, 3};
+		const d2 = [_]u8{9, 10, 11, 12};
+		conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{&d1, &d2}) catch unreachable;
+		const row = (try conn.row("select cblob, cblobn, ctext, ctextn from test where id = ?", .{conn.lastInsertedRowId()})).?;
+		defer row.deinit();
+
+		try t.expectEqualStrings(&d1, row.blob(0));
+		try t.expectEqualStrings(&d2, row.nullableBlob(1).?);
+
+		try t.expectEqualStrings(&d1, row.text(2));
+		try t.expectEqualStrings(&d2, row.nullableText(3).?);
+	}
+}
+
+test "explicit blob type" {
+	const conn = testDB();
+	defer conn.deinitErr() catch unreachable;
+
+	{
+		const d1 = [_]u8{0, 1, 2, 3};
+		conn.exec("insert into test (cblob) values (?1)", .{blob(&d1)}) catch unreachable;
+		const row = (try conn.row("select 1 from test where cblob = ?1", .{blob(&d1)})).?;
+		defer row.deinit();
+
+		try t.expectEqual(true, row.boolean(0));
+	}
+
+	{
+		conn.exec("insert into test (cblob) values (?1)", .{blob("hello")}) catch unreachable;
+		const row = (try conn.row("select 1 from test where cblob = ?1", .{blob("hello")})).?;
+		defer row.deinit();
+
+		try t.expectEqual(true, row.boolean(0));
 	}
 }
 

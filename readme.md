@@ -106,7 +106,16 @@ The `transaction()`, `exclusiveTransaction`, `commit` and `rollback` functions a
 conn.transaction()
 errdefer conn.rollback();
 
-try conn.exec(....);
-try conn.exec(....);
+try conn.exec(...);
+try conn.exec(...);
 try conn.commit();
 ```
+
+# Blobs
+When binding a `[]const u8`, this library has no way to tell whether the value should be treated as an text or blob. It defaults to text. To have the value bound as a blob use `zqlite.blob(value)`:
+
+```zig
+conn.insert("insert into records (image) values (?1)", .{zqlite.blob(image)})
+```
+
+However, this should only be necessary in specific cases where SQLite blob-specific operations are used on the data. Text and blob are practically the same, except they have a different type.
