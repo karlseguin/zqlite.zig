@@ -4,6 +4,10 @@ pub fn build(b: *std.Build) !void {
 	const target = b.standardTargetOptions(.{});
 	const optimize = b.standardOptimizeOption(.{});
 
+	_ = b.addModule("zqlite", .{
+		.source_file = .{ .path = "zqlite.zig" },
+	});
+
 	const lib = b.addStaticLibrary(.{
 		.name = "zqlite",
 		.root_source_file = .{ .path = "zqlite.zig" },

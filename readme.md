@@ -39,7 +39,7 @@ The `Conn` type returned by `open` has the following functions:
 * `changes() usize` - the number of rows inserted/updated/deleted by the previous statement
 * `lastInsertedRowId() i64` - the row id of the last inserted row
 * `lastError() [*:0]const u8` - an error string describing the last error
-* `transaction() !void` and `exclusiveTransaction() !void` - begins an transaction
+* `transaction() !void` and `exclusiveTransaction() !void` - begins a transaction
 * `commit() !void` and `rollback() void` - commits and rollback the current transaction
 * `prepare(sql, args) !zqlite.Stmt` - returns a thin wrapper around a `*c.sqlite3_stmt`. `row` and `rows` wrap this type.
 * `deinit() void` and `deinitErr() !void` - closes the database. `deinit()` silently ignores any error, if you care about the error, use `deinitErr()`
@@ -56,7 +56,7 @@ if (conn.row("select 1", .{})) |row| {
 
 ```
 
-When the `row` comes from iterator `rows`, `deinit` or `deinitErr` should not be called on the individual row:
+When the `row` comes from iterating `rows`, `deinit` or `deinitErr` should not be called on the individual row:
 
 ```zig
 var rows = try conn.rows("select 1 union all select 2", .{})
@@ -68,7 +68,7 @@ while (rows.next()) |row| {
 }
 ```
 
-Note that `zqlite.Rows` as an `err: ?anyerror` field which can be checked at any point. Calls to `next()` when `err != null` will return null. Thus, `err` need only be checked at the end of the loop:
+Note that `zqlite.Rows` has an `err: ?anyerror` field which can be checked at any point. Calls to `next()` when `err != null` will return null. Thus, `err` need only be checked at the end of the loop:
 
 ```zig
 var rows = try conn.rows("select 1 union all select 2", .{})
@@ -100,7 +100,7 @@ A `row` exposes the following functions to fetch data:
 The `nullableXYZ` functions can safely be called on a `not null` column. The non-nullable versions avoid a call to `sqlite3_column_type` (which is needed in the nullable versions to determine if the value is null or not).
 
 # Transaction:
-The `transaction()`, `exclusiveTransaction`, `commit` and `rollback` functions are simply wrappers to `conn.execNoArgs("begin")`, `conn.execNoArgs("begin exclusive")`, `conn.execNoArgs("commit")` and `conn.execNoArgs("rollback")`
+The `transaction()`, `exclusiveTransaction()`, `commit()` and `rollback()` functions are simply wrappers to `conn.execNoArgs("begin")`, `conn.execNoArgs("begin exclusive")`, `conn.execNoArgs("commit")` and `conn.execNoArgs("rollback")`
 
 ```zig
 conn.transaction()
