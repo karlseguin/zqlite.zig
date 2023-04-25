@@ -43,6 +43,7 @@ The `Conn` type returned by `open` has the following functions:
 * `commit() !void` and `rollback() void` - commits and rollback the current transaction
 * `prepare(sql, args) !zqlite.Stmt` - returns a thin wrapper around a `*c.sqlite3_stmt`. `row` and `rows` wrap this type.
 * `deinit() void` and `deinitErr() !void` - closes the database. `deinit()` silently ignores any error, if you care about the error, use `deinitErr()`
+* `busyTimeout(ms)` - Sets the busyHandler for the connection. See https://www.sqlite.org/c3ref/busy_timeout.html
 
 # Row and Rows
 Both `row` and `rows` wrap an `zqlite.Stmt` which itself is a thin wrapper around an `*c.sqlite3_stmt`. 
@@ -119,3 +120,60 @@ conn.insert("insert into records (image) values (?1)", .{zqlite.blob(image)})
 ```
 
 However, this should only be necessary in specific cases where SQLite blob-specific operations are used on the data. Text and blob are practically the same, except they have a different type.
+
+# Pool
+`zqlite.Pool` is a simple thread-safe connection pool. After being created, the `acquire` and `release` functions are used to get a connection from the pool and to release it.
+
+```zig
+var pool = zqlite.Pool.init(allocator, .{
+    // The number of connection in the pool. The pool will not grow or
+    // shrink beyond this count
+    .size = 5,   // default 5
+
+    // The path  of the DB connection
+    .path = "/tmp/zqlite.sqlite",  // no default, required
+
+    // Whether the DB is readonly or not
+    .read_only = false,   // default false
+
+    // The zqlite.OpenFlags to use when opening each connection in the pool
+    // Defaults are as shown here:
+    .flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode  
+
+    // Callback function to execute for each connection in the pool when opened
+    .on_connection = null,
+
+    // Callback function to execute only for the first connection in the pool
+    .on_first_connection = null,
+})
+
+const c1 = pool.acquire();
+defer pool.release(c1);
+c1.execNoArgs(...);
+```
+
+## Callbacks
+Both the `on_connection` and `on_first_connection` have the same signature. For the first connection to be opened by the pool, if both callbacks are provided then both callbacks will be executed, with `on_first_connection` executing first.
+
+```zig
+var pool = zqlite.Pool.init(allocator, .{
+    .size = 5,
+    .on_first_connection = &initializeDB,
+    .on_connection = &initializeConnection,
+    // other required & optional fields
+});
+...
+
+// Our size is 5, but this will only be executed once, for the first
+// connection in our pool
+fn initializeDB(conn: Conn) !void {
+    try conn.executeNoArgs("create table if not exists testing(id int)");
+}
+
+// Our size is 5, so this will be executed 5 times, once for each
+// connection. `initializeDB` is guaranteed to be called before this
+// function is called.
+fn initializeConnection(conn: Conn) !void {
+    return conn.busyTimeout(1000);
+}
+```

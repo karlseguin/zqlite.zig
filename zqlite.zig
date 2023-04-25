@@ -71,6 +71,13 @@ pub const Conn = struct {
 		}
 	}
 
+	pub fn busyTimeout(self: Conn, ms: c_int) !void {
+		const rc = c.sqlite3_busy_timeout(self.conn, ms);
+		if (rc != c.SQLITE_OK) {
+			return errorFromCode(rc);
+		}
+	}
+
 	pub fn exec(self: Conn, sql: []const u8, values: anytype) !void {
 		const stmt = try self.prepare(sql, values);
 		defer stmt.deinit();
@@ -498,6 +505,98 @@ fn isUnique(err: anyerror) bool {
 	return err == error.ConstraintUnique;
 }
 
+pub const Pool = struct {
+	mutex: std.Thread.Mutex,
+	cond: std.Thread.Condition,
+	conns: []Conn,
+	available: usize,
+	allocator: std.mem.Allocator,
+
+	pub const Config = struct {
+		size: usize = 5,
+		read_only: bool = false,
+		flags: c_int = OpenFlags.Create | OpenFlags.EXResCode,
+		path: [*:0]const u8,
+		on_connection: ?*const fn(conn: Conn) anyerror!void = null,
+		on_first_connection: ?*const fn(conn: Conn) anyerror!void = null,
+	};
+
+	pub fn init(allocator: std.mem.Allocator, config: Config) !Pool {
+		const size = config.size;
+		const conns = try allocator.alloc(Conn, size);
+
+		const path = config.path;
+		const flags = config.flags;
+		const read_only = config.read_only;
+		const on_connection = config.on_connection;
+
+		var init_count: usize = 0;
+		errdefer {
+			for (0..init_count) |i| {
+				conns[i].deinit();
+			}
+		}
+
+		for (0..size) |i| {
+			const conn = try Conn.init(path, read_only, flags);
+			if (i == 0) {
+				if (config.on_first_connection) |f| {
+					try f(conn);
+				}
+			}
+			if (on_connection) |f| {
+				try f(conn);
+			}
+			conns[i] = conn;
+			init_count += 1;
+		}
+
+		return .{
+			.conns = conns,
+			.available = size,
+			.allocator = allocator,
+			.mutex = std.Thread.Mutex{},
+			.cond = std.Thread.Condition{},
+		};
+	}
+
+	pub fn deinit(self: *Pool) void {
+		const allocator = self.allocator;
+		for (self.conns) |conn| {
+			conn.deinit();
+		}
+		allocator.free(self.conns);
+	}
+
+	pub fn acquire(self: *Pool) Conn {
+		self.mutex.lock();
+		while (true) {
+			const conns = self.conns;
+			const available = self.available;
+			if (available == 0) {
+				self.cond.wait(&self.mutex);
+				continue;
+			}
+			const index = available - 1;
+			const conn = conns[index];
+			self.available = index;
+			self.mutex.unlock();
+			return conn;
+		}
+	}
+
+	pub fn release(self: *Pool, conn: Conn) void {
+		self.mutex.lock();
+
+		var conns = self.conns;
+		const available = self.available;
+		conns[available] = conn;
+		self.available = available + 1;
+		self.mutex.unlock();
+		self.cond.signal();
+	}
+};
+
 test "init: path does not exist" {
 	try t.expectError(error.CantOpen, Conn.init("does_not_exist", false, 0));
 }
@@ -769,6 +868,53 @@ test "isUnique" {
 		is_unique = isUnique(err);
 	};
 	try t.expectEqual(true, is_unique);
+}
+
+test "pool" {
+	var pool = try Pool.init(t.allocator, .{
+		.size = 2,
+		.path = "/tmp/zqlite.test",
+		.on_connection = &testPoolEachConnection,
+		.on_first_connection = &testPoolFirstConnection,
+	});
+	defer pool.deinit();
+
+	const t1 = try std.Thread.spawn(.{}, testPool, .{&pool});
+	const t2 = try std.Thread.spawn(.{}, testPool, .{&pool});
+	const t3 = try std.Thread.spawn(.{}, testPool, .{&pool});
+
+	t1.join(); t2.join(); t3.join();
+
+	const c1 = pool.acquire();
+	defer pool.release(c1);
+
+	const row = (try c1.row("select cnt from pool_test", .{})).?;
+	try t.expectEqual(@as(i64, 3000), row.int(0));
+	row.deinit();
+
+	try c1.execNoArgs("drop table pool_test");
+}
+
+fn testPool(p: *Pool) void {
+	for (0..1000) |_| {
+		const conn = p.acquire();
+		conn.execNoArgs("update pool_test set cnt = cnt + 1") catch |err| {
+			std.debug.print("update err: {any}\n", .{err});
+			unreachable;
+		};
+		p.release(conn);
+	}
+}
+
+fn testPoolFirstConnection(conn: Conn) !void {
+	try conn.execNoArgs("pragma journal_mode=wal");
+	try conn.execNoArgs("drop table if exists pool_test");
+	try conn.execNoArgs("create table pool_test (cnt int not null)");
+	try conn.execNoArgs("insert into pool_test (cnt) values (0)");
+}
+
+fn testPoolEachConnection(conn: Conn) !void {
+	return conn.busyTimeout(1000);
 }
 
 fn testDB() Conn {
