@@ -908,13 +908,20 @@ fn testPool(p: *Pool) void {
 
 fn testPoolFirstConnection(conn: Conn) !void {
 	try conn.execNoArgs("pragma journal_mode=wal");
+
+	// This is not safe and can result in corruption. This is only set
+	// because the tests might be run on really slow hardware and we
+	// want to avoid having a busy timeout.
+	try conn.execNoArgs("pragma synchronous=off");
+
+
 	try conn.execNoArgs("drop table if exists pool_test");
 	try conn.execNoArgs("create table pool_test (cnt int not null)");
 	try conn.execNoArgs("insert into pool_test (cnt) values (0)");
 }
 
 fn testPoolEachConnection(conn: Conn) !void {
-	return conn.busyTimeout(1000);
+	return conn.busyTimeout(5000);
 }
 
 fn testDB() Conn {
