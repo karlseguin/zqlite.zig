@@ -7,7 +7,7 @@ const read_ony = false;
 // good idea to pass EXResCode to get extended result codes (more detailed errorr codes)
 const flags =  zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
 var conn = try zqlite.open("/tmp/test.sqlite", read_ony, flags);
-defer conn.deinit();
+defer conn.close();
 
 try conn.exec("create table test (name text)", .{});
 try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"});
@@ -42,7 +42,7 @@ The `Conn` type returned by `open` has the following functions:
 * `transaction() !void` and `exclusiveTransaction() !void` - begins a transaction
 * `commit() !void` and `rollback() void` - commits and rollback the current transaction
 * `prepare(sql, args) !zqlite.Stmt` - returns a thin wrapper around a `*c.sqlite3_stmt`. `row` and `rows` wrap this type.
-* `deinit() void` and `deinitErr() !void` - closes the database. `deinit()` silently ignores any error, if you care about the error, use `deinitErr()`
+* `close() void` and `tryClsoe() !void` - closes the database. `close()` silently ignores any error, if you care about the error, use `tryClose()`
 * `busyTimeout(ms)` - Sets the busyHandler for the connection. See https://www.sqlite.org/c3ref/busy_timeout.html
 
 # Row and Rows

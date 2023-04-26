@@ -59,12 +59,12 @@ pub const Conn = struct {
 		return .{.conn = conn.?};
 	}
 
-	pub fn deinit(self: Conn) void {
+	pub fn close(self: Conn) void {
 		_ = c.sqlite3_close_v2(self.conn);
 	}
 
 	// in case someone cares about getting this error
-	pub fn deinitErr(self: Conn) !void {
+	pub fn tryClose(self: Conn) !void {
 		const rc = c.sqlite3_close_v2(self.conn);
 		if (rc != c.SQLITE_OK) {
 			return errorFromCode(rc);
@@ -533,7 +533,7 @@ pub const Pool = struct {
 		var init_count: usize = 0;
 		errdefer {
 			for (0..init_count) |i| {
-				conns[i].deinit();
+				conns[i].close();
 			}
 		}
 
@@ -563,7 +563,7 @@ pub const Pool = struct {
 	pub fn deinit(self: *Pool) void {
 		const allocator = self.allocator;
 		for (self.conns) |conn| {
-			conn.deinit();
+			conn.close();
 		}
 		allocator.free(self.conns);
 	}
@@ -603,7 +603,7 @@ test "init: path does not exist" {
 
 test "exec and scan" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	conn.exec(\\
 	\\	insert into test (cint, creal, ctext, cblob)
@@ -636,7 +636,7 @@ test "exec and scan" {
 
 test "bind null" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	conn.exec(\\
 	\\	insert into test (cintn, crealn, ctextn, cblobn)
@@ -654,7 +654,7 @@ test "bind null" {
 
 test "bind null optionals" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	var empty = TestRow{};
 
@@ -674,7 +674,7 @@ test "bind null optionals" {
 
 test "boolean" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	{
 		conn.exec("insert into test (cint, cintn) values (?, ?)", .{true, true}) catch unreachable;
@@ -705,7 +705,7 @@ test "boolean" {
 
 test "blob/text" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	{
 		const d1 = [_]u8{0, 1, 2, 3};
@@ -724,7 +724,7 @@ test "blob/text" {
 
 test "explicit blob type" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	{
 		const d1 = [_]u8{0, 1, 2, 3};
@@ -746,7 +746,7 @@ test "explicit blob type" {
 
 test "empty string/blob" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	conn.exec(
 		\\ insert into test (ctext, ctextn, cblob, cblobn) values
@@ -763,7 +763,7 @@ test "empty string/blob" {
 
 test "transaction commit" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	var id1: i64 = 0;
 	var id2: i64 = 0;
@@ -791,7 +791,7 @@ test "transaction commit" {
 
 test "transaction rollback" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	var id1: i64 = 0;
 	var id2: i64 = 0;
@@ -814,7 +814,7 @@ test "transaction rollback" {
 
 test "rows" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	conn.exec(\\
 	\\ insert into test (cint, ctext)
@@ -839,27 +839,27 @@ test "rows" {
 
 test "row query error" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 	try t.expectError(error.Error, conn.row("select invalid from test", .{}));
 	try t.expectEqualStrings("no such column: invalid", std.mem.span(conn.lastError()));
 }
 
 test "rows query error" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 	try t.expectError(error.Error, conn.rows("select invalid from test", .{}));
 	try t.expectEqualStrings("no such column: invalid", std.mem.span(conn.lastError()));
 }
 
 test "lastError without error" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 	try t.expectEqualStrings("not an error", std.mem.span(conn.lastError()));
 }
 
 test "isUnique" {
 	const conn = testDB();
-	defer conn.deinitErr() catch unreachable;
+	defer conn.tryClose() catch unreachable;
 
 	conn.execNoArgs("insert into test (uniq) values (1)") catch unreachable;
 
