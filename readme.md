@@ -3,10 +3,9 @@ A thin SQLite wrapper for Zig
 Consider using [zig-sqlite](https://github.com/vrischmann/zig-sqlite) for a more mature, full-featured library that better leverages Zig.
 
 ```zig
-const read_ony = false;
 // good idea to pass EXResCode to get extended result codes (more detailed errorr codes)
 const flags =  zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
-var conn = try zqlite.open("/tmp/test.sqlite", read_ony, flags);
+var conn = try zqlite.open("/tmp/test.sqlite", flags);
 defer conn.close();
 
 try conn.exec("create table test (name text)", .{});
@@ -28,6 +27,8 @@ try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"})
     if (rows.err) |err| return err;
 }
 ```
+
+Unless `zqlite.OpenFlags.ReadOnly` is set in the open flags, `zqlite.OpenFlags.ReadWrite` is assumed (in other words, the database opens in read-write by default, and the `ReadOnly` flag must be used to open it in readony mode.)
 
 # Conn
 The `Conn` type returned by `open` has the following functions:
@@ -132,9 +133,6 @@ var pool = zqlite.Pool.init(allocator, .{
 
     // The path  of the DB connection
     .path = "/tmp/zqlite.sqlite",  // no default, required
-
-    // Whether the DB is readonly or not
-    .read_only = false,   // default false
 
     // The zqlite.OpenFlags to use when opening each connection in the pool
     // Defaults are as shown here:

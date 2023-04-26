@@ -4,6 +4,8 @@ const c = @cImport(@cInclude("sqlite3.h"));
 
 pub const OpenFlags = struct {
 	pub const Create = c.SQLITE_OPEN_CREATE;
+	pub const ReadOnly = c.SQLITE_OPEN_READONLY;
+	pub const ReadWrite = c.SQLITE_OPEN_READWRITE;
 	pub const DeleteOnClose = c.SQLITE_OPEN_DELETEONCLOSE;
 	pub const Exclusive = c.SQLITE_OPEN_EXCLUSIVE;
 	pub const AutoProxy = c.SQLITE_OPEN_AUTOPROXY;
@@ -25,8 +27,8 @@ pub const OpenFlags = struct {
 	pub const EXResCode = c.SQLITE_OPEN_EXRESCODE;
 };
 
-pub fn open(path: [*:0]const u8, read_only: bool, flags: c_int) !Conn {
-	return Conn.init(path, read_only, flags);
+pub fn open(path: [*:0]const u8, flags: c_int) !Conn {
+	return Conn.init(path, flags);
 }
 
 pub fn blob(value: []const u8) Blob {
@@ -42,15 +44,13 @@ pub const Blob = struct {
 pub const Conn = struct {
 	conn: *c.sqlite3,
 
-	pub fn init(path: [*:0]const u8, read_only: bool, flags: c_int) !Conn {
+	pub fn init(path: [*:0]const u8, flags: c_int) !Conn {
+		// sqlite requires either READONLY or READWRITE flag
 		var full_flags = flags;
-		// one of these flags is required, so we require an explicit parameter,
-		// read_only, to make this requirement explicit
-		if (read_only) {
-			full_flags |= c.SQLITE_OPEN_READONLY;
-		} else {
+		if (flags & c.SQLITE_OPEN_READONLY != c.SQLITE_OPEN_READONLY) {
 			full_flags |= c.SQLITE_OPEN_READWRITE;
 		}
+
 		var conn: ?*c.sqlite3 = null;
 		const rc = c.sqlite3_open_v2(path, &conn, full_flags, null);
 		if (rc != c.SQLITE_OK) {
@@ -514,7 +514,6 @@ pub const Pool = struct {
 
 	pub const Config = struct {
 		size: usize = 5,
-		read_only: bool = false,
 		flags: c_int = OpenFlags.Create | OpenFlags.EXResCode,
 		path: [*:0]const u8,
 		on_connection: ?*const fn(conn: Conn) anyerror!void = null,
@@ -527,7 +526,6 @@ pub const Pool = struct {
 
 		const path = config.path;
 		const flags = config.flags;
-		const read_only = config.read_only;
 		const on_connection = config.on_connection;
 
 		var init_count: usize = 0;
@@ -538,7 +536,7 @@ pub const Pool = struct {
 		}
 
 		for (0..size) |i| {
-			const conn = try Conn.init(path, read_only, flags);
+			const conn = try Conn.init(path, flags);
 			if (i == 0) {
 				if (config.on_first_connection) |f| {
 					try f(conn);
@@ -598,7 +596,7 @@ pub const Pool = struct {
 };
 
 test "init: path does not exist" {
-	try t.expectError(error.CantOpen, Conn.init("does_not_exist", false, 0));
+	try t.expectError(error.CantOpen, Conn.init("does_not_exist", 0));
 }
 
 test "exec and scan" {
@@ -925,7 +923,7 @@ fn testPoolEachConnection(conn: Conn) !void {
 }
 
 fn testDB() Conn {
-	var conn = open(":memory:", false, OpenFlags.Create | OpenFlags.EXResCode) catch unreachable;
+	var conn = open(":memory:", OpenFlags.Create | OpenFlags.EXResCode) catch unreachable;
 	conn.execNoArgs(\\
 	\\	create table test (
 	\\		id integer primary key not null,
