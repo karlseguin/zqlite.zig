@@ -537,6 +537,7 @@ pub const Pool = struct {
 
 		for (0..size) |i| {
 			const conn = try Conn.init(path, flags);
+			init_count += 1;
 			if (i == 0) {
 				if (config.on_first_connection) |f| {
 					try f(conn);
@@ -546,7 +547,6 @@ pub const Pool = struct {
 				try f(conn);
 			}
 			conns[i] = conn;
-			init_count += 1;
 		}
 
 		return .{
