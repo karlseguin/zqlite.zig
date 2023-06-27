@@ -93,7 +93,7 @@ pub const Conn = struct {
 
 	pub fn prepare(self: Conn, sql: []const u8, values: anytype) !Stmt {
 		var n_stmt: ?*c.sqlite3_stmt = null;
-		var rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(c_int, sql.len), &n_stmt, null);
+		var rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, null);
 		if (rc != c.SQLITE_OK) {
 			return errorFromCode(rc);
 		}
@@ -112,11 +112,11 @@ pub const Conn = struct {
 	}
 
 	pub fn changes(self: Conn) usize {
-		return @intCast(usize, c.sqlite3_changes(self.conn));
+		return @intCast(c.sqlite3_changes(self.conn));
 	}
 
 	pub fn lastInsertedRowId(self: Conn) i64 {
-		return @intCast(i64, c.sqlite3_last_insert_rowid(self.conn));
+		return @intCast(c.sqlite3_last_insert_rowid(self.conn));
 	}
 
 	pub fn row(self: Conn, sql: []const u8, values: anytype) !?Row {
@@ -158,27 +158,27 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
 
 	switch (@typeInfo(T)) {
 		.Null => rc = c.sqlite3_bind_null(stmt, bind_index),
-		.Int, .ComptimeInt => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, value)),
+		.Int, .ComptimeInt => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(value)),
 		.Float, .ComptimeFloat => rc = c.sqlite3_bind_double(stmt, bind_index, value),
 		.Bool => {
 			if (value) {
-				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, 1));
+				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(1));
 			} else {
-				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(c_longlong, 0));
+				rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(0));
 			}
 		},
 		.Pointer => |ptr| {
 			switch (ptr.size) {
 				.One => try bindValue(ptr.child, stmt, value, bind_index),
 				.Slice => switch (ptr.child) {
-					u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(c_int, value.len), c.SQLITE_STATIC),
+					u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC),
 					else => bindError(T),
 				},
 				else => bindError(T),
 			}
 		},
 		.Array => |arr| switch (arr.child) {
-			u8 => rc = c.sqlite3_bind_text(stmt, bind_index, @ptrCast([*c]const u8, value), @intCast(c_int, value.len), c.SQLITE_STATIC),
+			u8 => rc = c.sqlite3_bind_text(stmt, bind_index, @ptrCast(value), @intCast(value.len), c.SQLITE_STATIC),
 			else => bindError(T),
 		},
 		.Optional => |opt| {
@@ -191,7 +191,7 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
 		.Struct => {
 			if (T == Blob) {
 				const inner = value.value;
-				rc = c.sqlite3_bind_blob(stmt, bind_index, @ptrCast([*c]const u8, inner), @intCast(c_int, inner.len), c.SQLITE_STATIC);
+				rc = c.sqlite3_bind_blob(stmt, bind_index, @ptrCast(inner), @intCast(inner.len), c.SQLITE_STATIC);
 			} else {
 				bindError(T);
 			}
@@ -255,20 +255,20 @@ pub const Stmt = struct {
 	}
 
 	pub fn int(self: Stmt, index: usize) i64 {
-		return @intCast(i64, c.sqlite3_column_int64(self.stmt, @intCast(c_int, index)));
+		return @intCast(c.sqlite3_column_int64(self.stmt, @intCast(index)));
 	}
 	pub fn nullableInt(self: Stmt, index: usize) ?i64 {
-		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+		if (c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL) {
 			return null;
 		}
 		return self.int(index);
 	}
 
 	pub fn float(self: Stmt, index: usize) f64 {
-		return @floatCast(f64, c.sqlite3_column_double(self.stmt, @intCast(c_int, index)));
+		return @floatCast(c.sqlite3_column_double(self.stmt, @intCast(index)));
 	}
 	pub fn nullableFloat(self: Stmt, index: usize) ?f64 {
-		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+		if (c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL) {
 			return null;
 		}
 		return self.float(index);
@@ -276,17 +276,17 @@ pub const Stmt = struct {
 
 	pub fn text(self: Stmt, index: usize) []const u8 {
 		const stmt = self.stmt;
-		const c_index = @intCast(c_int, index);
+		const c_index: c_int = @intCast(index);
 		const data = c.sqlite3_column_text(stmt, c_index);
 		const len = c.sqlite3_column_bytes(stmt, c_index);
 		if (len == 0) {
 			return "";
 		}
-		return @ptrCast([*c]const u8, data)[0..@intCast(usize, len)];
+		return @as([*c]const u8, @ptrCast(data))[0..@intCast(len)];
 
 	}
 	pub fn nullableText(self: Stmt, index: usize) ?[]const u8 {
-		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+		if (c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL) {
 			return null;
 		}
 		return self.text(index);
@@ -294,7 +294,7 @@ pub const Stmt = struct {
 
 	pub fn blob(self: Stmt, index: usize) []const u8 {
 		const stmt = self.stmt;
-		const c_index = @intCast(c_int, index);
+		const c_index: c_int = @intCast(index);
 
 		const data = c.sqlite3_column_blob(stmt, c_index);
 		if (data == null) {
@@ -302,10 +302,10 @@ pub const Stmt = struct {
 		}
 
 		const len = c.sqlite3_column_bytes(stmt, c_index);
-		return @ptrCast([*c]const u8, data)[0..@intCast(usize, len)];
+		return @as([*c]const u8, @ptrCast(data))[0..@intCast(len)];
 	}
 	pub fn nullableBlob(self: Stmt, index: usize) ?[]const u8 {
-		if (c.sqlite3_column_type(self.stmt, @intCast(c_int, index)) == c.SQLITE_NULL) {
+		if (c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL) {
 			return null;
 		}
 		return self.blob(index);
