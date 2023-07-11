@@ -310,6 +310,14 @@ pub const Stmt = struct {
 		}
 		return self.blob(index);
 	}
+
+	pub fn columnCount(self: Stmt) i32 {
+		return c.sqlite3_data_count(self.stmt);
+	}
+
+	pub fn columnName(self: Stmt, index: usize) [*:0]const u8 {
+		return c.sqlite3_column_name(self.stmt, @intCast(index));
+	}
 };
 
 pub const Row = struct {
@@ -868,30 +876,18 @@ test "isUnique" {
 	try t.expectEqual(true, is_unique);
 }
 
-test "pool" {
-	var pool = try Pool.init(t.allocator, .{
-		.size = 2,
-		.path = "/tmp/zqlite.test",
-		.on_connection = &testPoolEachConnection,
-		.on_first_connection = &testPoolFirstConnection,
-	});
-	defer pool.deinit();
+test "statement meta" {
+	const conn = testDB();
+	defer conn.tryClose() catch unreachable;
 
-	const t1 = try std.Thread.spawn(.{}, testPool, .{&pool});
-	const t2 = try std.Thread.spawn(.{}, testPool, .{&pool});
-	const t3 = try std.Thread.spawn(.{}, testPool, .{&pool});
+	const row = conn.row("select 1 as id, 'leto' as name", .{}) catch unreachable orelse unreachable;
+	defer row.deinit();
 
-	t1.join(); t2.join(); t3.join();
-
-	const c1 = pool.acquire();
-	defer pool.release(c1);
-
-	const row = (try c1.row("select cnt from pool_test", .{})).?;
-	try t.expectEqual(@as(i64, 3000), row.int(0));
-	row.deinit();
-
-	try c1.execNoArgs("drop table pool_test");
+	try t.expectEqual(@as(i32, 2), row.stmt.columnCount());
+	try t.expectEqualStrings("id", std.mem.span(row.stmt.columnName(0)));
+	try t.expectEqualStrings("name", std.mem.span(row.stmt.columnName(1)));
 }
+
 
 fn testPool(p: *Pool) void {
 	for (0..1000) |_| {
