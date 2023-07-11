@@ -318,6 +318,26 @@ pub const Stmt = struct {
 	pub fn columnName(self: Stmt, index: usize) [*:0]const u8 {
 		return c.sqlite3_column_name(self.stmt, @intCast(index));
 	}
+
+	pub fn columnType(self: Stmt, index: usize) ColumnType {
+		return switch (c.sqlite3_column_type(self.stmt, @intCast(index))) {
+			1 => .int,
+			2 => .float,
+			3 => .text,
+			4 => .blob,
+			5 => .null,
+			else => .unknown,
+		};
+	}
+};
+
+pub const ColumnType = enum {
+	int,
+	float,
+	text,
+	blob,
+	@"null",
+	unknown
 };
 
 pub const Row = struct {
@@ -880,12 +900,17 @@ test "statement meta" {
 	const conn = testDB();
 	defer conn.tryClose() catch unreachable;
 
-	const row = conn.row("select 1 as id, 'leto' as name", .{}) catch unreachable orelse unreachable;
+	const row = conn.row("select 1 as id, 'leto' as name, null as other", .{}) catch unreachable orelse unreachable;
 	defer row.deinit();
 
-	try t.expectEqual(@as(i32, 2), row.stmt.columnCount());
+	try t.expectEqual(@as(i32, 3), row.stmt.columnCount());
 	try t.expectEqualStrings("id", std.mem.span(row.stmt.columnName(0)));
 	try t.expectEqualStrings("name", std.mem.span(row.stmt.columnName(1)));
+	try t.expectEqualStrings("other", std.mem.span(row.stmt.columnName(2)));
+
+	try t.expectEqual(ColumnType.int, row.stmt.columnType(0));
+	try t.expectEqual(ColumnType.text, row.stmt.columnType(1));
+	try t.expectEqual(ColumnType.null, row.stmt.columnType(2));
 }
 
 
