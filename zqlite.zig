@@ -529,7 +529,7 @@ fn errorFromCode(result: c_int) anyerror {
 	};
 }
 
-fn isUnique(err: anyerror) bool {
+pub fn isUnique(err: anyerror) bool {
 	return err == error.ConstraintUnique;
 }
 
