@@ -292,6 +292,18 @@ pub const Stmt = struct {
 		return self.text(index);
 	}
 
+	pub fn textZ(self: Stmt, index: usize) [*:0]const u8 {
+		const stmt = self.stmt;
+		const c_index: c_int = @intCast(index);
+		return c.sqlite3_column_text(stmt, c_index);
+	}
+	pub fn nullableTextZ(self: Stmt, index: usize) ?[*:0]const u8 {
+		if (c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL) {
+			return null;
+		}
+		return self.textZ(index);
+	}
+
 	pub fn blob(self: Stmt, index: usize) []const u8 {
 		const stmt = self.stmt;
 		const c_index: c_int = @intCast(index);
@@ -377,6 +389,13 @@ pub const Row = struct {
 	}
 	pub fn nullableText(self: Row, index: usize) ?[]const u8 {
 		return self.stmt.nullableText(index);
+	}
+
+	pub fn textZ(self: Row, index: usize) [*:0]const u8 {
+		return self.stmt.textZ(index);
+	}
+	pub fn nullableTextZ(self: Row, index: usize) ?[*:0]const u8 {
+		return self.stmt.nullableTextZ(index);
 	}
 
 	pub fn blob(self: Row, index: usize) []const u8 {
@@ -734,7 +753,7 @@ test "blob/text" {
 	defer conn.tryClose() catch unreachable;
 
 	{
-		const d1 = [_]u8{0, 1, 2, 3};
+		const d1 = [_]u8{5, 1, 2, 3};
 		const d2 = [_]u8{9, 10, 11, 12};
 		conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{&d1, &d2}) catch unreachable;
 		const row = (try conn.row("select cblob, cblobn, ctext, ctextn from test where id = ?", .{conn.lastInsertedRowId()})).?;
@@ -745,6 +764,9 @@ test "blob/text" {
 
 		try t.expectEqualStrings(&d1, row.text(2));
 		try t.expectEqualStrings(&d2, row.nullableText(3).?);
+
+		try t.expectEqualStrings(&d1, std.mem.span(row.textZ(2)));
+		try t.expectEqualStrings(&d2, std.mem.span(row.nullableTextZ(3).?));
 	}
 }
 
