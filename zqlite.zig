@@ -303,6 +303,11 @@ pub const Stmt = struct {
 		}
 		return self.textZ(index);
 	}
+	pub fn textLen(self: Stmt, index: usize) usize {
+		const stmt = self.stmt;
+		const c_index: c_int = @intCast(index);
+		return @intCast(c.sqlite3_column_bytes(stmt, c_index));
+	}
 
 	pub fn blob(self: Stmt, index: usize) []const u8 {
 		const stmt = self.stmt;
@@ -396,6 +401,9 @@ pub const Row = struct {
 	}
 	pub fn nullableTextZ(self: Row, index: usize) ?[*:0]const u8 {
 		return self.stmt.nullableTextZ(index);
+	}
+	pub fn textLen(self: Row, index: usize) usize {
+		return self.stmt.textLen(index);
 	}
 
 	pub fn blob(self: Row, index: usize) []const u8 {
@@ -754,7 +762,7 @@ test "blob/text" {
 
 	{
 		const d1 = [_]u8{5, 1, 2, 3};
-		const d2 = [_]u8{9, 10, 11, 12};
+		const d2 = [_]u8{9, 10, 11, 12, 13};
 		conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{&d1, &d2}) catch unreachable;
 		const row = (try conn.row("select cblob, cblobn, ctext, ctextn from test where id = ?", .{conn.lastInsertedRowId()})).?;
 		defer row.deinit();
@@ -767,6 +775,8 @@ test "blob/text" {
 
 		try t.expectEqualStrings(&d1, std.mem.span(row.textZ(2)));
 		try t.expectEqualStrings(&d2, std.mem.span(row.nullableTextZ(3).?));
+		try t.expectEqual(@as(usize, 4), row.textLen(2));
+		try t.expectEqual(@as(usize, 5), row.textLen(3));
 	}
 }
 
