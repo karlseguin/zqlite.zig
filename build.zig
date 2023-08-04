@@ -16,8 +16,11 @@ pub fn build(b: *std.Build) !void {
 		.target = target,
 		.optimize = optimize,
 	});
-	lib_test.addCSourceFile("lib/sqlite3/sqlite3.c", sqlite3_build);
-	lib_test.addIncludePath("lib/sqlite3/");
+	lib_test.addCSourceFile(.{
+		.file = std.Build.LazyPath.relative("lib/sqlite3/sqlite3.c"),
+		.flags = sqlite3_build,
+	});
+	lib_test.addIncludePath(std.Build.LazyPath.relative("lib/sqlite3/"));
 	lib_test.linkLibC();
 
 	const run_test = b.addRunArtifact(lib_test);
