@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
 	const optimize = b.standardOptimizeOption(.{});
 
 	const default_sqlite3_build = [_][]const u8{"-std=c99"};
-	var sqlite3_build = b.option([]const []const u8, "sqlite3", "options to use when compiling sqlite3") orelse &default_sqlite3_build;
+	const sqlite3_build = b.option([]const []const u8, "sqlite3", "options to use when compiling sqlite3") orelse &default_sqlite3_build;
 
 	_ = b.addModule("zqlite", .{
 		.source_file = .{ .path = "zqlite.zig" },

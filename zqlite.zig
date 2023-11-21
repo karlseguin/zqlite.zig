@@ -93,7 +93,7 @@ pub const Conn = struct {
 
 	pub fn prepare(self: Conn, sql: []const u8, values: anytype) !Stmt {
 		var n_stmt: ?*c.sqlite3_stmt = null;
-		var rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, null);
+		const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, null);
 		if (rc != c.SQLITE_OK) {
 			return errorFromCode(rc);
 		}
@@ -709,7 +709,7 @@ test "bind null optionals" {
 	const conn = testDB();
 	defer conn.tryClose() catch unreachable;
 
-	var empty = TestRow{};
+	const empty = TestRow{};
 
 	conn.exec(\\
 	\\	insert into test (cintn, crealn, ctextn, cblobn)
