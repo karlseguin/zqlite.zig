@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) !void {
 	const sqlite3_build = b.option([]const []const u8, "sqlite3", "options to use when compiling sqlite3") orelse &default_sqlite3_build;
 
 	_ = b.addModule("zqlite", .{
-		.source_file = .{ .path = "zqlite.zig" },
+		.root_source_file = .{ .path = "zqlite.zig" },
 	});
 
 	const lib_test = b.addTest(.{
