@@ -364,7 +364,7 @@ pub const Row = struct {
 		self.stmt.deinit();
 	}
 
-	pub fn deinitErr(self: Stmt) !void {
+	pub fn deinitErr(self: Row) !void {
 		return self.stmt.deinitErr();
 	}
 
