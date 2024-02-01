@@ -416,7 +416,7 @@ pub const Row = struct {
 
 pub const Rows = struct {
 	stmt: Stmt,
-	err: ?anyerror,
+	err: ?Error,
 
 	pub fn deinit(self: Rows) void {
 		self.stmt.deinit();
@@ -445,7 +445,112 @@ pub const Rows = struct {
 	}
 };
 
-fn errorFromCode(result: c_int) anyerror {
+pub const Error = error{
+    Abort,
+    Auth,
+    Busy,
+    CantOpen,
+    Constraint,
+    Corrupt,
+    Empty,
+    Error,
+    Format,
+    Full,
+    Internal,
+    Interrupt,
+    IoErr,
+    Locked,
+    Mismatch,
+    Misuse,
+    NoLFS,
+    NoMem,
+    NotADB,
+    Notfound,
+    Notice,
+    Perm,
+    Protocol,
+    Range,
+    ReadOnly,
+    Schema,
+    TooBig,
+    Warning,
+    ErrorMissingCollseq,
+    ErrorRetry,
+    ErrorSnapshot,
+    IoerrRead,
+    IoerrShortRead,
+    IoerrWrite,
+    IoerrFsync,
+    IoerrDir_fsync,
+    IoerrTruncate,
+    IoerrFstat,
+    IoerrUnlock,
+    IoerrRdlock,
+    IoerrDelete,
+    IoerrBlocked,
+    IoerrNomem,
+    IoerrAccess,
+    IoerrCheckreservedlock,
+    IoerrLock,
+    IoerrClose,
+    IoerrDirClose,
+    IoerrShmopen,
+    IoerrShmsize,
+    IoerrShmlock,
+    ioerrshmmap,
+    IoerrSeek,
+    IoerrDeleteNoent,
+    IoerrMmap,
+    IoerrGetTempPath,
+    IoerrConvPath,
+    IoerrVnode,
+    IoerrAuth,
+    IoerrBeginAtomic,
+    IoerrCommitAtomic,
+    IoerrRollbackAtomic,
+    IoerrData,
+    IoerrCorruptFS,
+    LockedSharedCache,
+    LockedVTab,
+    BusyRecovery,
+    BusySnapshot,
+    BusyTimeout,
+    CantOpenNoTempDir,
+    CantOpenIsDir,
+    CantOpenFullPath,
+    CantOpenConvPath,
+    CantOpenDirtyWal,
+    CantOpenSymlink,
+    CorruptVTab,
+    CorruptSequence,
+    CorruptIndex,
+    ReadonlyRecovery,
+    ReadonlyCantlock,
+    ReadonlyRollback,
+    ReadonlyDbMoved,
+    ReadonlyCantInit,
+    ReadonlyDirectory,
+    AbortRollback,
+    ConstraintCheck,
+    ConstraintCommithook,
+    ConstraintForeignKey,
+    ConstraintFunction,
+    ConstraintNotNull,
+    ConstraintPrimaryKey,
+    ConstraintTrigger,
+    ConstraintUnique,
+    ConstraintVTab,
+    ConstraintRowId,
+    ConstraintPinned,
+    ConstraintDatatype,
+    NoticeRecoverWal,
+    NoticeRecoverRollback,
+    WarningAutoIndex,
+    AuthUser,
+    OkLoadPermanently,
+};
+
+fn errorFromCode(result: c_int) Error {
 	return switch (result) {
 		c.SQLITE_ABORT => error.Abort,
 		c.SQLITE_AUTH => error.Auth,
@@ -556,7 +661,7 @@ fn errorFromCode(result: c_int) anyerror {
 	};
 }
 
-pub fn isUnique(err: anyerror) bool {
+pub fn isUnique(err: Error) bool {
 	return err == error.ConstraintUnique;
 }
 
@@ -892,7 +997,7 @@ test "rows" {
 	try t.expectEqualStrings("four", r2.text(1));
 
 	try t.expectEqual(@as(?Row, null), rows.next());
-	try t.expectEqual(@as(?anyerror, null), rows.err);
+	try t.expectEqual(@as(?Error, null), rows.err);
 }
 
 test "row query error" {
