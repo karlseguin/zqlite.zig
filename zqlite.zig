@@ -99,10 +99,8 @@ pub const Conn = struct {
 		}
 
 		const stmt = n_stmt.?;
-		if (values.len > 0) {
-			inline for (values, 0..) |value, i| {
-				try bindValue(@TypeOf(value), stmt, value, i + 1);
-			}
+		inline for (values, 0..) |value, i| {
+			try bindValue(@TypeOf(value), stmt, value, i + 1);
 		}
 
 		return .{
