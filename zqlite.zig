@@ -169,7 +169,16 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
 		},
 		.Pointer => |ptr| {
 			switch (ptr.size) {
-				.One => try bindValue(ptr.child, stmt, value, bind_index),
+				.One => switch (@typeInfo(ptr.child)) {
+					.Array => |arr| {
+						if (arr.child == u8) {
+							rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC);
+						} else {
+							bindError(T);
+						}
+					},
+					else => bindError(T),
+				},
 				.Slice => switch (ptr.child) {
 					u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC),
 					else => bindError(T),
@@ -177,13 +186,10 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
 				else => bindError(T),
 			}
 		},
-		.Array => |arr| switch (arr.child) {
-			u8 => rc = c.sqlite3_bind_text(stmt, bind_index, @ptrCast(value), @intCast(value.len), c.SQLITE_STATIC),
-			else => bindError(T),
-		},
+		.Array => return bindValue(@TypeOf(&value), stmt, &value, bind_index),
 		.Optional => |opt| {
 			if (value) |v| {
-				try bindValue(opt.child, stmt, v, bind_index);
+				return bindValue(opt.child, stmt, v, bind_index);
 			} else {
 				rc = c.sqlite3_bind_null(stmt, bind_index);
 			}
@@ -868,7 +874,7 @@ test "blob/text" {
 	{
 		const d1 = [_]u8{5, 1, 2, 3};
 		const d2 = [_]u8{9, 10, 11, 12, 13};
-		conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{&d1, &d2}) catch unreachable;
+		conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{&d1, d2}) catch unreachable;
 		const row = (try conn.row("select cblob, cblobn, ctext, ctextn from test where id = ?", .{conn.lastInsertedRowId()})).?;
 		defer row.deinit();
 
@@ -1049,7 +1055,6 @@ test "statement meta" {
 	try t.expectEqual(ColumnType.text, row.stmt.columnType(1));
 	try t.expectEqual(ColumnType.null, row.stmt.columnType(2));
 }
-
 
 fn testPool(p: *Pool) void {
 	for (0..1000) |_| {
