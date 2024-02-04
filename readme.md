@@ -1,9 +1,7 @@
-A thin SQLite wrapper for Zig
-
-Consider using [zig-sqlite](https://github.com/vrischmann/zig-sqlite) for a more mature, full-featured library that better leverages Zig.
+# A thin SQLite wrapper for Zig
 
 ```zig
-// good idea to pass EXResCode to get extended result codes (more detailed errorr codes)
+// good idea to pass EXResCode to get extended result codes (more detailed error codes)
 const flags =  zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
 var conn = try zqlite.open("/tmp/test.sqlite", flags);
 defer conn.close();
@@ -29,6 +27,56 @@ try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"})
 ```
 
 Unless `zqlite.OpenFlags.ReadOnly` is set in the open flags, `zqlite.OpenFlags.ReadWrite` is assumed (in other words, the database opens in read-write by default, and the `ReadOnly` flag must be used to open it in readony mode.)
+
+## Install
+
+Add into `dependencies` of `build.zig.zon`:
+
+```zig
+.dependencies = .{
+    ...
+    .zqlite = .{
+        .url = "git+https://github.com/karlseguin/zqlite.zig#master",
+        .hash = {{ actual_hash string, remove this line before 'zig build' to get actual hash }},
+    },
+},
+```
+
+The library doesn't attempt to link/include SQLite. You're free to do this how you want. If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/sqlite3/` folder, you can then:
+
+2) Add this in `build.zig`:
+```zig
+const zqlite = b.dependency("zqlite", .{
+    .target = target,
+    .optimize = optimize,
+});
+zqlite.addCSourceFile(.{
+    .file = LazyPath.relative("lib/sqlite3/sqlite3.c"),
+    .flags = &[_][]const u8{
+        "-DSQLITE_DQS=0",
+        "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
+        "-DSQLITE_USE_ALLOCA=1",
+        "-DSQLITE_THREADSAFE=1",
+        "-DSQLITE_TEMP_STORE=3",
+        "-DSQLITE_ENABLE_API_ARMOR=1",
+        "-DSQLITE_ENABLE_UNLOCK_NOTIFY",
+        "-DSQLITE_ENABLE_UPDATE_DELETE_LIMIT=1",
+        "-DSQLITE_DEFAULT_FILE_PERMISSIONS=0600",
+        "-DSQLITE_OMIT_DECLTYPE=1",
+        "-DSQLITE_OMIT_DEPRECATED=1",
+        "-DSQLITE_OMIT_LOAD_EXTENSION=1",
+        "-DSQLITE_OMIT_PROGRESS_CALLBACK=1",
+        "-DSQLITE_OMIT_SHARED_CACHE",
+        "-DSQLITE_OMIT_TRACE=1",
+        "-DSQLITE_OMIT_UTF16=1",
+        "-DHAVE_USLEEP=0",
+    },
+});
+zqlite.addIncludePath(LazyPath.relative("lib/sqlite3/"));
+exe.root_module.addImport("zqlite", zqlite);
+```
+
+You can tweak the SQLite build flags for your own needs/platform.
 
 # Conn
 The `Conn` type returned by `open` has the following functions:
