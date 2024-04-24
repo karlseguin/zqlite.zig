@@ -42,7 +42,21 @@ Add into `dependencies` of `build.zig.zon`:
 },
 ```
 
-The library doesn't attempt to link/include SQLite. You're free to do this how you want. If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/sqlite3/` folder, you can then:
+The library doesn't attempt to link/include SQLite. You're free to do this how you want.
+
+If you have sqlite3 installed on your system you might get away with just adding this to your build.zig
+
+```zig
+    const zqlite = b.dependency("zqlite", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe.linkSystemLibrary("sqlite3");
+    exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
+```
+
+Alternatively, If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/sqlite3/` folder, you can then:
 
 2) Add this in `build.zig`:
 ```zig
@@ -73,7 +87,7 @@ zqlite.addCSourceFile(.{
     },
 });
 zqlite.addIncludePath(LazyPath.relative("lib/sqlite3/"));
-exe.root_module.addImport("zqlite", zqlite);
+exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
 You can tweak the SQLite build flags for your own needs/platform.
