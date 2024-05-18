@@ -8,19 +8,19 @@ pub fn build(b: *std.Build) !void {
 	const sqlite3_build = b.option([]const []const u8, "sqlite3", "options to use when compiling sqlite3") orelse &default_sqlite3_build;
 
 	_ = b.addModule("zqlite", .{
-		.root_source_file = .{ .path = "zqlite.zig" },
+		.root_source_file = b.path("zqlite.zig"),
 	});
 
 	const lib_test = b.addTest(.{
-		.root_source_file = .{ .path = "zqlite.zig" },
+		.root_source_file = b.path("zqlite.zig"),
 		.target = target,
 		.optimize = optimize,
 	});
 	lib_test.addCSourceFile(.{
-		.file = std.Build.LazyPath.relative("lib/sqlite3/sqlite3.c"),
+		.file = b.path("lib/sqlite3/sqlite3.c"),
 		.flags = sqlite3_build,
 	});
-	lib_test.addIncludePath(std.Build.LazyPath.relative("lib/sqlite3/"));
+	lib_test.addIncludePath(b.path("lib/sqlite3/"));
 	lib_test.linkLibC();
 
 	const run_test = b.addRunArtifact(lib_test);
