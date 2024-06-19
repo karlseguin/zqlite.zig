@@ -47,13 +47,13 @@ The library doesn't attempt to link/include SQLite. You're free to do this how y
 If you have sqlite3 installed on your system you might get away with just adding this to your build.zig
 
 ```zig
-    const zqlite = b.dependency("zqlite", .{
-        .target = target,
-        .optimize = optimize,
-    });
+const zqlite = b.dependency("zqlite", .{
+    .target = target,
+    .optimize = optimize,
+});
 
-    exe.linkSystemLibrary("sqlite3");
-    exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
+exe.linkSystemLibrary("sqlite3");
+exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
 Alternatively, If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/sqlite3/` folder, you can then:
@@ -64,8 +64,8 @@ const zqlite = b.dependency("zqlite", .{
     .target = target,
     .optimize = optimize,
 });
-zqlite.addCSourceFile(.{
-    .file = LazyPath.relative("lib/sqlite3/sqlite3.c"),
+exe.addCSourceFile(.{
+    .file = std.Build.path(b, "lib/sqlite3/sqlite3.c"),
     .flags = &[_][]const u8{
         "-DSQLITE_DQS=0",
         "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
@@ -86,7 +86,7 @@ zqlite.addCSourceFile(.{
         "-DHAVE_USLEEP=0",
     },
 });
-zqlite.addIncludePath(LazyPath.relative("lib/sqlite3/"));
+exe.addIncludePath(std.Build.path(b, "lib/sqlite3/"));
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
@@ -114,10 +114,10 @@ Both `row` and `rows` wrap an `zqlite.Stmt` which itself is a thin wrapper aroun
 While `zqlite.Row` exposes a `deinit` and `deinitErr` method, it should only be called when the row was fetched directly from `conn.row(...)`:
 
 ```zig
-if (conn.row("select 1", .{})) |row| {
+if (try conn.row("select 1", .{})) |row| {
     defer row.deinit();  // must be called
     std.debug.print("{d}\n", .{row.int(0)});
-
+}
 ```
 
 When the `row` comes from iterating `rows`, `deinit` or `deinitErr` should not be called on the individual row:
@@ -188,7 +188,7 @@ However, this should only be necessary in specific cases where SQLite blob-speci
 `zqlite.Pool` is a simple thread-safe connection pool. After being created, the `acquire` and `release` functions are used to get a connection from the pool and to release it.
 
 ```zig
-var pool = zqlite.Pool.init(allocator, .{
+var pool = try zqlite.Pool.init(allocator, .{
     // The number of connection in the pool. The pool will not grow or
     // shrink beyond this count
     .size = 5,   // default 5
@@ -205,7 +205,7 @@ var pool = zqlite.Pool.init(allocator, .{
 
     // Callback function to execute only for the first connection in the pool
     .on_first_connection = null,
-})
+});
 
 const c1 = pool.acquire();
 defer pool.release(c1);
@@ -227,7 +227,7 @@ var pool = zqlite.Pool.init(allocator, .{
 // Our size is 5, but this will only be executed once, for the first
 // connection in our pool
 fn initializeDB(conn: Conn) !void {
-    try conn.executeNoArgs("create table if not exists testing(id int)");
+    try conn.execNoArgs("create table if not exists testing(id int)");
 }
 
 // Our size is 5, so this will be executed 5 times, once for each
