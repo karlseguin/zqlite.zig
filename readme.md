@@ -65,7 +65,7 @@ const zqlite = b.dependency("zqlite", .{
     .optimize = optimize,
 });
 exe.addCSourceFile(.{
-    .file = std.Build.path(b, "lib/sqlite3/sqlite3.c"),
+    .file = b.path("lib/sqlite3/sqlite3.c"),
     .flags = &[_][]const u8{
         "-DSQLITE_DQS=0",
         "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
@@ -86,7 +86,7 @@ exe.addCSourceFile(.{
         "-DHAVE_USLEEP=0",
     },
 });
-exe.addIncludePath(std.Build.path(b, "lib/sqlite3/"));
+exe.addIncludePath(b.path("lib/sqlite3/"));
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
