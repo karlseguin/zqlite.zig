@@ -770,8 +770,8 @@ test "exec and scan" {
 	defer conn.tryClose() catch unreachable;
 
 	conn.exec(\\
-	\\	insert into test (cint, creal, ctext, cblob)
-	\\	values (?1, ?2, ?3, ?4)
+	\\  insert into test (cint, creal, ctext, cblob)
+	\\  values (?1, ?2, ?3, ?4)
 	, .{-3, 2.2, "three", "four"}) catch unreachable;
 
 	try t.expectEqual(@as(usize, 1), conn.changes());
@@ -803,8 +803,8 @@ test "bind null" {
 	defer conn.tryClose() catch unreachable;
 
 	conn.exec(\\
-	\\	insert into test (cintn, crealn, ctextn, cblobn)
-	\\	values (?1, ?2, ?3, ?4)
+	\\ insert into test (cintn, crealn, ctextn, cblobn)
+	\\ values (?1, ?2, ?3, ?4)
 	, .{null, null, null, null}) catch unreachable;
 	try t.expectEqual(@as(usize, 1), conn.changes());
 
@@ -823,8 +823,8 @@ test "bind null optionals" {
 	const empty = TestRow{};
 
 	conn.exec(\\
-	\\	insert into test (cintn, crealn, ctextn, cblobn)
-	\\	values (?1, ?2, ?3, ?4)
+	\\ insert into test (cintn, crealn, ctextn, cblobn)
+	\\ values (?1, ?2, ?3, ?4)
 	, .{empty.intn, empty.realn, empty.textn, empty.blobn}) catch unreachable;
 	try t.expectEqual(@as(usize, 1), conn.changes());
 
@@ -1088,18 +1088,18 @@ fn testPoolEachConnection(conn: Conn) !void {
 fn testDB() Conn {
 	var conn = open(":memory:", OpenFlags.Create | OpenFlags.EXResCode) catch unreachable;
 	conn.execNoArgs(\\
-	\\	create table test (
-	\\		id integer primary key not null,
-	\\		cint integer not null default(0),
-	\\		cintn integer null,
-	\\		creal real not null default(0.0),
-	\\		crealn real null,
-	\\		ctext text not null default(''),
-	\\		ctextn text null,
-	\\		cblob blob not null default(''),
-	\\		cblobn blob null,
-	\\		uniq int unique null
-	\\	)
+	\\ create table test (
+	\\  id integer primary key not null,
+	\\  cint integer not null default(0),
+	\\  cintn integer null,
+	\\  creal real not null default(0.0),
+	\\  crealn real null,
+	\\  ctext text not null default(''),
+	\\  ctextn text null,
+	\\  cblob blob not null default(''),
+	\\  cblobn blob null,
+	\\  uniq int unique null
+	\\ )
 	) catch unreachable;
 	return conn;
 }
