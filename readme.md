@@ -64,6 +64,7 @@ const zqlite = b.dependency("zqlite", .{
     .target = target,
     .optimize = optimize,
 });
+zqlite.module("zqlite").addIncludePath(b.path("lib/sqlite3/"));
 exe.addCSourceFile(.{
     .file = b.path("lib/sqlite3/sqlite3.c"),
     .flags = &[_][]const u8{
@@ -86,7 +87,6 @@ exe.addCSourceFile(.{
         "-DHAVE_USLEEP=0",
     },
 });
-exe.addIncludePath(b.path("lib/sqlite3/"));
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
