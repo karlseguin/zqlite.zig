@@ -29,20 +29,15 @@ try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"})
 Unless `zqlite.OpenFlags.ReadOnly` is set in the open flags, `zqlite.OpenFlags.ReadWrite` is assumed (in other words, the database opens in read-write by default, and the `ReadOnly` flag must be used to open it in readony mode.)
 
 ## Install
+This library is tested with SQLite3 3.46.1 .
 
-Add into `dependencies` of `build.zig.zon`:
+1) Add zqlite as a dependency in your `build.zig.zon`:
 
-```zig
-.dependencies = .{
-    ...
-    .zqlite = .{
-        .url = "git+https://github.com/karlseguin/zqlite.zig#master",
-        .hash = {{ actual_hash string, remove this line before 'zig build' to get actual hash }},
-    },
-},
+```bash
+zig fetch --save git+https://github.com/karlseguin/zqlite.zig#master
 ```
 
-The library doesn't attempt to link/include SQLite. You're free to do this how you want.
+2)  The library doesn't attempt to link/include SQLite. You're free to do this how you want.
 
 If you have sqlite3 installed on your system you might get away with just adding this to your build.zig
 
@@ -56,7 +51,7 @@ exe.linkSystemLibrary("sqlite3");
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
-Alternatively, If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/sqlite3/` folder, you can then:
+Alternatively, If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/` folder, you can then:
 
 2) Add this in `build.zig`:
 ```zig
@@ -64,9 +59,8 @@ const zqlite = b.dependency("zqlite", .{
     .target = target,
     .optimize = optimize,
 });
-zqlite.module("zqlite").addIncludePath(b.path("lib/sqlite3/"));
 exe.addCSourceFile(.{
-    .file = b.path("lib/sqlite3/sqlite3.c"),
+    .file = b.path("lib/sqlite3.c"),
     .flags = &[_][]const u8{
         "-DSQLITE_DQS=0",
         "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
