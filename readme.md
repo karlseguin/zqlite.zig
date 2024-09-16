@@ -81,6 +81,7 @@ exe.addCSourceFile(.{
         "-DHAVE_USLEEP=0",
     },
 });
+exe.linkLibC();
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
