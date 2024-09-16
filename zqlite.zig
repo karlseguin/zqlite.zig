@@ -157,20 +157,20 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
     var rc: c_int = 0;
 
     switch (@typeInfo(T)) {
-        .null => rc = c.sqlite3_bind_null(stmt, bind_index),
-        .int, .comptime_int => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(value)),
-        .float, .comptime_float => rc = c.sqlite3_bind_double(stmt, bind_index, value),
-        .bool => {
+        .Null => rc = c.sqlite3_bind_null(stmt, bind_index),
+        .Int, .ComptimeInt => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(value)),
+        .Float, .ComptimeFloat => rc = c.sqlite3_bind_double(stmt, bind_index, value),
+        .Bool => {
             if (value) {
                 rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(1));
             } else {
                 rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(0));
             }
         },
-        .pointer => |ptr| {
+        .Pointer => |ptr| {
             switch (ptr.size) {
                 .One => switch (@typeInfo(ptr.child)) {
-                    .array => |arr| {
+                    .Array => |arr| {
                         if (arr.child == u8) {
                             rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC);
                         } else {
@@ -186,15 +186,15 @@ fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index
                 else => bindError(T),
             }
         },
-        .array => return bindValue(@TypeOf(&value), stmt, &value, bind_index),
-        .optional => |opt| {
+        .Array => return bindValue(@TypeOf(&value), stmt, &value, bind_index),
+        .Optional => |opt| {
             if (value) |v| {
                 return bindValue(opt.child, stmt, v, bind_index);
             } else {
                 rc = c.sqlite3_bind_null(stmt, bind_index);
             }
         },
-        .@"struct" => {
+        .Struct => {
             if (T == Blob) {
                 const inner = value.value;
                 rc = c.sqlite3_bind_blob(stmt, bind_index, @ptrCast(inner), @intCast(inner.len), c.SQLITE_STATIC);
