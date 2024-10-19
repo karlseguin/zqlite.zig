@@ -6,7 +6,7 @@ const flags =  zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
 var conn = try zqlite.open("/tmp/test.sqlite", flags);
 defer conn.close();
 
-try conn.exec("create table test (name text)", .{});
+try conn.exec("create table if not exists test (name text)", .{});
 try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"});
 
 {
