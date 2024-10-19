@@ -47,6 +47,7 @@ const zqlite = b.dependency("zqlite", .{
     .optimize = optimize,
 });
 
+exe.linkLibC();
 exe.linkSystemLibrary("sqlite3");
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
