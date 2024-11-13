@@ -7,6 +7,7 @@ const Error = zqlite.Error;
 
 pub const Conn = struct {
     conn: *c.sqlite3,
+    _pool: ?*zqlite.Pool = null,
 
     pub fn init(path: [*:0]const u8, flags: c_int) !Conn {
         // sqlite requires either READONLY or READWRITE flag
@@ -21,6 +22,10 @@ pub const Conn = struct {
             return errorFromCode(rc);
         }
         return .{ .conn = conn.? };
+    }
+
+    pub fn release(self: Conn) void {
+        self._pool.?.release(self);
     }
 
     pub fn close(self: Conn) void {

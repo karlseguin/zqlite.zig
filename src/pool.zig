@@ -20,10 +20,21 @@ pub const Pool = struct {
         on_first_connection: ?*const fn (conn: Conn) anyerror!void = null,
     };
 
-    pub fn init(allocator: Allocator, config: Config) !Pool {
+    pub fn init(allocator: Allocator, config: Config) !*Pool {
+        const pool = try allocator.create(Pool);
+        errdefer allocator.destroy(pool);
+
         const size = config.size;
         const conns = try allocator.alloc(Conn, size);
         errdefer allocator.free(conns);
+
+        pool.* = .{
+            .cond = .{},
+            .mutex = .{},
+            .conns = conns,
+            .available = size,
+            .allocator = allocator,
+        };
 
         const path = config.path;
         const flags = config.flags;
@@ -37,7 +48,9 @@ pub const Pool = struct {
         }
 
         for (0..size) |i| {
-            const conn = try Conn.init(path, flags);
+            var conn = try Conn.init(path, flags);
+            conn._pool = pool;
+
             init_count += 1;
             if (i == 0) {
                 if (config.on_first_connection) |f| {
@@ -50,13 +63,7 @@ pub const Pool = struct {
             conns[i] = conn;
         }
 
-        return .{
-            .cond = .{},
-            .mutex = .{},
-            .conns = conns,
-            .available = size,
-            .allocator = allocator,
-        };
+        return pool;
     }
 
     pub fn deinit(self: *Pool) void {
@@ -65,6 +72,7 @@ pub const Pool = struct {
             conn.close();
         }
         allocator.free(self.conns);
+        allocator.destroy(self);
     }
 
     pub fn acquire(self: *Pool) Conn {
@@ -106,14 +114,14 @@ test "pool" {
     });
     defer pool.deinit();
 
-    const t1 = try std.Thread.spawn(.{}, testPool, .{&pool});
-    const t2 = try std.Thread.spawn(.{}, testPool, .{&pool});
-    const t3 = try std.Thread.spawn(.{}, testPool, .{&pool});
+    const t1 = try std.Thread.spawn(.{}, testPool, .{pool});
+    const t2 = try std.Thread.spawn(.{}, testPool, .{pool});
+    const t3 = try std.Thread.spawn(.{}, testPool, .{pool});
 
     t1.join(); t2.join(); t3.join();
 
     const c1 = pool.acquire();
-    defer pool.release(c1);
+    defer c1.release();
 
     const row = (try c1.row("select cnt from pool_test", .{})).?;
     try t.expectEqual(@as(i64, 3000), row.int(0));
