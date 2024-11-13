@@ -204,7 +204,7 @@ var pool = try zqlite.Pool.init(allocator, .{
 });
 
 const c1 = pool.acquire();
-defer pool.release(c1);
+defer c1.release();
 c1.execNoArgs(...);
 ```
 

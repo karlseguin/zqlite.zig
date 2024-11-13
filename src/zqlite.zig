@@ -1,8 +1,14 @@
 const std = @import("std");
 pub const c = @cImport(@cInclude("sqlite3.h"));
 
-pub const Conn = @import("conn.zig").Conn;
 pub const Pool = @import("pool.zig").Pool;
+
+const conn = @import("conn.zig");
+pub const Conn = conn.Conn;
+pub const Row = conn.Row;
+pub const Rows = conn.Rows;
+pub const Stmt = conn.Stmt;
+pub const ColumnType = conn.ColumnType;
 
 pub fn open(path: [*:0]const u8, flags: c_int) !Conn {
     return Conn.init(path, flags);
