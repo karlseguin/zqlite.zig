@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) !void {
     const lib_path = b.path("lib");
 
     const zqlite = b.addModule("zqlite", .{
-        .root_source_file = b.path("zqlite.zig"),
+        .root_source_file = b.path("src/zqlite.zig"),
     });
     zqlite.addIncludePath(lib_path);
 
@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .test_runner = b.path("test_runner.zig"),
-        .root_source_file = b.path("zqlite.zig"),
+        .root_source_file = b.path("src/zqlite.zig"),
     });
     lib_test.addCSourceFile(.{
         .file = b.path("lib/sqlite3.c"),

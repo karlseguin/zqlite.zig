@@ -1,45 +1,9 @@
 const std = @import("std");
-const t = std.testing;
 const c = @cImport(@cInclude("sqlite3.h"));
 
-pub const OpenFlags = struct {
-    pub const Create = c.SQLITE_OPEN_CREATE;
-    pub const ReadOnly = c.SQLITE_OPEN_READONLY;
-    pub const ReadWrite = c.SQLITE_OPEN_READWRITE;
-    pub const DeleteOnClose = c.SQLITE_OPEN_DELETEONCLOSE;
-    pub const Exclusive = c.SQLITE_OPEN_EXCLUSIVE;
-    pub const AutoProxy = c.SQLITE_OPEN_AUTOPROXY;
-    pub const Uri = c.SQLITE_OPEN_URI;
-    pub const Memory = c.SQLITE_OPEN_MEMORY;
-    pub const MainDB = c.SQLITE_OPEN_MAIN_DB;
-    pub const TempDB = c.SQLITE_OPEN_TEMP_DB;
-    pub const TransientDB = c.SQLITE_OPEN_TRANSIENT_DB;
-    pub const MainJournal = c.SQLITE_OPEN_MAIN_JOURNAL;
-    pub const TempJournal = c.SQLITE_OPEN_TEMP_JOURNAL;
-    pub const SubJournal = c.SQLITE_OPEN_SUBJOURNAL;
-    pub const SuperJournal = c.SQLITE_OPEN_SUPER_JOURNAL;
-    pub const NoMutex = c.SQLITE_OPEN_NOMUTEX;
-    pub const FullMutex = c.SQLITE_OPEN_FULLMUTEX;
-    pub const SharedCache = c.SQLITE_OPEN_SHAREDCACHE;
-    pub const PrivateCache = c.SQLITE_OPEN_PRIVATECACHE;
-    pub const OpenWAL = c.SQLITE_OPEN_WAL;
-    pub const NoFollow = c.SQLITE_OPEN_NOFOLLOW;
-    pub const EXResCode = c.SQLITE_OPEN_EXRESCODE;
-};
-
-pub fn open(path: [*:0]const u8, flags: c_int) !Conn {
-    return Conn.init(path, flags);
-}
-
-pub fn blob(value: []const u8) Blob {
-    return .{ .value = value };
-}
-
-// a marker type so we can tell if the provided []const u8 should be treated as
-// a text or a blob
-pub const Blob = struct {
-    value: []const u8,
-};
+const zqlite = @import("zqlite.zig");
+const Blob = zqlite.Blob;
+const Error = zqlite.Error;
 
 pub const Conn = struct {
     conn: *c.sqlite3,
@@ -443,111 +407,6 @@ pub const Rows = struct {
     }
 };
 
-pub const Error = error{
-    Abort,
-    Auth,
-    Busy,
-    CantOpen,
-    Constraint,
-    Corrupt,
-    Empty,
-    Error,
-    Format,
-    Full,
-    Internal,
-    Interrupt,
-    IoErr,
-    Locked,
-    Mismatch,
-    Misuse,
-    NoLFS,
-    NoMem,
-    NotADB,
-    Notfound,
-    Notice,
-    Perm,
-    Protocol,
-    Range,
-    ReadOnly,
-    Schema,
-    TooBig,
-    Warning,
-    ErrorMissingCollseq,
-    ErrorRetry,
-    ErrorSnapshot,
-    IoerrRead,
-    IoerrShortRead,
-    IoerrWrite,
-    IoerrFsync,
-    IoerrDir_fsync,
-    IoerrTruncate,
-    IoerrFstat,
-    IoerrUnlock,
-    IoerrRdlock,
-    IoerrDelete,
-    IoerrBlocked,
-    IoerrNomem,
-    IoerrAccess,
-    IoerrCheckreservedlock,
-    IoerrLock,
-    IoerrClose,
-    IoerrDirClose,
-    IoerrShmopen,
-    IoerrShmsize,
-    IoerrShmlock,
-    ioerrshmmap,
-    IoerrSeek,
-    IoerrDeleteNoent,
-    IoerrMmap,
-    IoerrGetTempPath,
-    IoerrConvPath,
-    IoerrVnode,
-    IoerrAuth,
-    IoerrBeginAtomic,
-    IoerrCommitAtomic,
-    IoerrRollbackAtomic,
-    IoerrData,
-    IoerrCorruptFS,
-    LockedSharedCache,
-    LockedVTab,
-    BusyRecovery,
-    BusySnapshot,
-    BusyTimeout,
-    CantOpenNoTempDir,
-    CantOpenIsDir,
-    CantOpenFullPath,
-    CantOpenConvPath,
-    CantOpenDirtyWal,
-    CantOpenSymlink,
-    CorruptVTab,
-    CorruptSequence,
-    CorruptIndex,
-    ReadonlyRecovery,
-    ReadonlyCantlock,
-    ReadonlyRollback,
-    ReadonlyDbMoved,
-    ReadonlyCantInit,
-    ReadonlyDirectory,
-    AbortRollback,
-    ConstraintCheck,
-    ConstraintCommithook,
-    ConstraintForeignKey,
-    ConstraintFunction,
-    ConstraintNotNull,
-    ConstraintPrimaryKey,
-    ConstraintTrigger,
-    ConstraintUnique,
-    ConstraintVTab,
-    ConstraintRowId,
-    ConstraintPinned,
-    ConstraintDatatype,
-    NoticeRecoverWal,
-    NoticeRecoverRollback,
-    WarningAutoIndex,
-    AuthUser,
-    OkLoadPermanently,
-};
-
 fn errorFromCode(result: c_int) Error {
     return switch (result) {
         c.SQLITE_ABORT => error.Abort,
@@ -659,100 +518,7 @@ fn errorFromCode(result: c_int) Error {
     };
 }
 
-pub fn isUnique(err: Error) bool {
-    return err == error.ConstraintUnique;
-}
-
-pub const Pool = struct {
-    mutex: std.Thread.Mutex,
-    cond: std.Thread.Condition,
-    conns: []Conn,
-    available: usize,
-    allocator: std.mem.Allocator,
-
-    pub const Config = struct {
-        size: usize = 5,
-        flags: c_int = OpenFlags.Create | OpenFlags.EXResCode,
-        path: [*:0]const u8,
-        on_connection: ?*const fn (conn: Conn) anyerror!void = null,
-        on_first_connection: ?*const fn (conn: Conn) anyerror!void = null,
-    };
-
-    pub fn init(allocator: std.mem.Allocator, config: Config) !Pool {
-        const size = config.size;
-        const conns = try allocator.alloc(Conn, size);
-
-        const path = config.path;
-        const flags = config.flags;
-        const on_connection = config.on_connection;
-
-        var init_count: usize = 0;
-        errdefer {
-            for (0..init_count) |i| {
-                conns[i].close();
-            }
-        }
-
-        for (0..size) |i| {
-            const conn = try Conn.init(path, flags);
-            init_count += 1;
-            if (i == 0) {
-                if (config.on_first_connection) |f| {
-                    try f(conn);
-                }
-            }
-            if (on_connection) |f| {
-                try f(conn);
-            }
-            conns[i] = conn;
-        }
-
-        return .{
-            .conns = conns,
-            .available = size,
-            .allocator = allocator,
-            .mutex = std.Thread.Mutex{},
-            .cond = std.Thread.Condition{},
-        };
-    }
-
-    pub fn deinit(self: *Pool) void {
-        const allocator = self.allocator;
-        for (self.conns) |conn| {
-            conn.close();
-        }
-        allocator.free(self.conns);
-    }
-
-    pub fn acquire(self: *Pool) Conn {
-        self.mutex.lock();
-        while (true) {
-            const conns = self.conns;
-            const available = self.available;
-            if (available == 0) {
-                self.cond.wait(&self.mutex);
-                continue;
-            }
-            const index = available - 1;
-            const conn = conns[index];
-            self.available = index;
-            self.mutex.unlock();
-            return conn;
-        }
-    }
-
-    pub fn release(self: *Pool, conn: Conn) void {
-        self.mutex.lock();
-
-        var conns = self.conns;
-        const available = self.available;
-        conns[available] = conn;
-        self.available = available + 1;
-        self.mutex.unlock();
-        self.cond.signal();
-    }
-};
-
+const t = std.testing;
 test "init: path does not exist" {
     try t.expectError(error.CantOpen, Conn.init("does_not_exist", 0));
 }
@@ -892,16 +658,16 @@ test "explicit blob type" {
 
     {
         const d1 = [_]u8{ 0, 1, 2, 3 };
-        conn.exec("insert into test (cblob) values (?1)", .{blob(&d1)}) catch unreachable;
-        const row = (try conn.row("select 1 from test where cblob = ?1", .{blob(&d1)})).?;
+        conn.exec("insert into test (cblob) values (?1)", .{zqlite.blob(&d1)}) catch unreachable;
+        const row = (try conn.row("select 1 from test where cblob = ?1", .{zqlite.blob(&d1)})).?;
         defer row.deinit();
 
         try t.expectEqual(true, row.boolean(0));
     }
 
     {
-        conn.exec("insert into test (cblob) values (?1)", .{blob("hello")}) catch unreachable;
-        const row = (try conn.row("select 1 from test where cblob = ?1", .{blob("hello")})).?;
+        conn.exec("insert into test (cblob) values (?1)", .{zqlite.blob("hello")}) catch unreachable;
+        const row = (try conn.row("select 1 from test where cblob = ?1", .{zqlite.blob("hello")})).?;
         defer row.deinit();
 
         try t.expectEqual(true, row.boolean(0));
@@ -1030,7 +796,7 @@ test "isUnique" {
 
     var is_unique = false;
     conn.execNoArgs("insert into test (uniq) values (1)") catch |err| {
-        is_unique = isUnique(err);
+        is_unique = zqlite.isUnique(err);
     };
     try t.expectEqual(true, is_unique);
 }
@@ -1052,36 +818,8 @@ test "statement meta" {
     try t.expectEqual(ColumnType.null, row.stmt.columnType(2));
 }
 
-fn testPool(p: *Pool) void {
-    for (0..1000) |_| {
-        const conn = p.acquire();
-        conn.execNoArgs("update pool_test set cnt = cnt + 1") catch |err| {
-            std.debug.print("update err: {any}\n", .{err});
-            unreachable;
-        };
-        p.release(conn);
-    }
-}
-
-fn testPoolFirstConnection(conn: Conn) !void {
-    try conn.execNoArgs("pragma journal_mode=wal");
-
-    // This is not safe and can result in corruption. This is only set
-    // because the tests might be run on really slow hardware and we
-    // want to avoid having a busy timeout.
-    try conn.execNoArgs("pragma synchronous=off");
-
-    try conn.execNoArgs("drop table if exists pool_test");
-    try conn.execNoArgs("create table pool_test (cnt int not null)");
-    try conn.execNoArgs("insert into pool_test (cnt) values (0)");
-}
-
-fn testPoolEachConnection(conn: Conn) !void {
-    return conn.busyTimeout(5000);
-}
-
 fn testDB() Conn {
-    var conn = open(":memory:", OpenFlags.Create | OpenFlags.EXResCode) catch unreachable;
+    var conn = zqlite.open(":memory:", zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode) catch unreachable;
     conn.execNoArgs(
         \\
         \\ create table test (
