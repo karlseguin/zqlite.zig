@@ -48,8 +48,9 @@ pub const Conn = struct {
     }
 
     pub fn exec(self: Conn, sql: []const u8, values: anytype) !void {
-        const stmt = try self.prepare(sql, values);
+        const stmt = try self.prepare(sql);
         defer stmt.deinit();
+        try stmt.bind(values);
         try stmt.stepToCompletion();
     }
 
@@ -60,24 +61,13 @@ pub const Conn = struct {
         }
     }
 
-    pub fn prepare(self: Conn, sql: []const u8, values: anytype) !Stmt {
+    pub fn prepare(self: Conn, sql: []const u8) !Stmt {
         var n_stmt: ?*c.sqlite3_stmt = null;
         const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, null);
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
         }
-
-        const stmt = n_stmt.?;
-        if (values.len > 0) {
-            inline for (values, 0..) |value, i| {
-                try bindValue(@TypeOf(value), stmt, value, i + 1);
-            }
-        }
-
-        return .{
-            .stmt = stmt,
-            .conn = self.conn,
-        };
+        return .{.stmt = n_stmt.?, .conn = self.conn};
     }
 
     pub fn changes(self: Conn) usize {
@@ -89,15 +79,21 @@ pub const Conn = struct {
     }
 
     pub fn row(self: Conn, sql: []const u8, values: anytype) !?Row {
-        const stmt = try self.prepare(sql, values);
+        const stmt = try self.prepare(sql);
+        errdefer stmt.deinit();
+
+        try stmt.bind(values);
         if (try stmt.step() == false) {
+            stmt.deinit();
             return null;
         }
         return .{ .stmt = stmt };
     }
 
     pub fn rows(self: Conn, sql: []const u8, values: anytype) !Rows {
-        const stmt = try self.prepare(sql, values);
+        const stmt = try self.prepare(sql);
+        errdefer stmt.deinit();
+        try stmt.bind(values);
         return .{ .stmt = stmt, .err = null };
     }
 
@@ -122,67 +118,6 @@ pub const Conn = struct {
     }
 };
 
-fn bindValue(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index: c_int) !void {
-    var rc: c_int = 0;
-
-    switch (@typeInfo(T)) {
-        .null => rc = c.sqlite3_bind_null(stmt, bind_index),
-        .int, .comptime_int => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(value)),
-        .float, .comptime_float => rc = c.sqlite3_bind_double(stmt, bind_index, value),
-        .bool => {
-            if (value) {
-                rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(1));
-            } else {
-                rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(0));
-            }
-        },
-        .pointer => |ptr| {
-            switch (ptr.size) {
-                .One => switch (@typeInfo(ptr.child)) {
-                    .array => |arr| {
-                        if (arr.child == u8) {
-                            rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC);
-                        } else {
-                            bindError(T);
-                        }
-                    },
-                    else => bindError(T),
-                },
-                .Slice => switch (ptr.child) {
-                    u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC),
-                    else => bindError(T),
-                },
-                else => bindError(T),
-            }
-        },
-        .array => return bindValue(@TypeOf(&value), stmt, &value, bind_index),
-        .optional => |opt| {
-            if (value) |v| {
-                return bindValue(opt.child, stmt, v, bind_index);
-            } else {
-                rc = c.sqlite3_bind_null(stmt, bind_index);
-            }
-        },
-        .@"struct" => {
-            if (T == Blob) {
-                const inner = value.value;
-                rc = c.sqlite3_bind_blob(stmt, bind_index, @ptrCast(inner), @intCast(inner.len), c.SQLITE_STATIC);
-            } else {
-                bindError(T);
-            }
-        },
-        else => bindError(T),
-    }
-
-    if (rc != c.SQLITE_OK) {
-        return errorFromCode(rc);
-    }
-}
-
-fn bindError(comptime T: type) void {
-    @compileError("cannot bind value of type " ++ @typeName(T));
-}
-
 pub const Stmt = struct {
     conn: *c.sqlite3,
     stmt: *c.sqlite3_stmt,
@@ -196,6 +131,17 @@ pub const Stmt = struct {
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
         }
+    }
+
+    pub fn bind(self: Stmt, values: anytype) !void {
+        const stmt = self.stmt;
+        inline for (values, 0..) |value, i| {
+            try _bind(@TypeOf(value), stmt, value, i + 1);
+        }
+    }
+
+    pub fn bindValue(self: Stmt, value: anytype, index: usize) !void {
+        try _bind(@TypeOf(value), self.stmt, value, index + 1);
     }
 
     pub fn step(self: Stmt) !bool {
@@ -319,6 +265,75 @@ pub const Stmt = struct {
             5 => .null,
             else => .unknown,
         };
+    }
+
+    fn _bind(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index: c_int) !void {
+        var rc: c_int = 0;
+
+        switch (@typeInfo(T)) {
+            .null => rc = c.sqlite3_bind_null(stmt, bind_index),
+            .int, .comptime_int => rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(value)),
+            .float, .comptime_float => rc = c.sqlite3_bind_double(stmt, bind_index, value),
+            .bool => {
+                if (value) {
+                    rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(1));
+                } else {
+                    rc = c.sqlite3_bind_int64(stmt, bind_index, @intCast(0));
+                }
+            },
+            .pointer => |ptr| {
+                switch (ptr.size) {
+                    .One => switch (@typeInfo(ptr.child)) {
+                        .array => |arr| {
+                            if (arr.child == u8) {
+                                rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC);
+                            } else {
+                                bindError(T);
+                            }
+                        },
+                        else => bindError(T),
+                    },
+                    .Slice => switch (ptr.child) {
+                        u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC),
+                        else => bindError(T),
+                    },
+                    else => bindError(T),
+                }
+            },
+            .array => |arr| {
+                if (arr.child == u8) {
+                    @compileError("Pass a string slice, rather than an array, to bind a text/blob. String arrays will be supported when https://github.com/ziglang/zig/issues/15893#issuecomment-1925092582 is fixed");
+                    // const data: []const u8 = value[0..arr.len];
+                    // rc = c.sqlite3_bind_text(stmt, bind_index, data.ptr, @intCast(data.len), c.SQLITE_TRANSIENT);
+                } else {
+                    bindError(T);
+                }
+            },
+            .optional => |opt| {
+                if (value) |v| {
+                    return _bind(opt.child, stmt, v, bind_index);
+                } else {
+                    rc = c.sqlite3_bind_null(stmt, bind_index);
+                }
+            },
+            .@"struct" => {
+                if (T == Blob) {
+                    const inner = value.value;
+                    rc = c.sqlite3_bind_blob(stmt, bind_index, @ptrCast(inner), @intCast(inner.len), c.SQLITE_STATIC);
+                } else {
+                    bindError(T);
+                }
+            },
+            else => bindError(T),
+        }
+
+        if (rc != c.SQLITE_OK) {
+            return errorFromCode(rc);
+        }
+    }
+
+    fn bindError(comptime T: type) void {
+        @compileError("cannot bind value of type " ++ @typeName(T));
     }
 };
 
@@ -640,7 +655,7 @@ test "blob/text" {
     {
         const d1 = [_]u8{ 5, 1, 2, 3 };
         const d2 = [_]u8{ 9, 10, 11, 12, 13 };
-        conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{ &d1, d2 }) catch unreachable;
+        conn.exec("insert into test (cblob, cblobn, ctext, ctextn) values (?1, ?2, ?1, ?2)", .{ &d1, &d2 }) catch unreachable;
         const row = (try conn.row("select cblob, cblobn, ctext, ctextn from test where id = ?", .{conn.lastInsertedRowId()})).?;
         defer row.deinit();
 
