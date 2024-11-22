@@ -350,18 +350,30 @@ pub const Row = struct {
         return self.stmt.deinitErr();
     }
 
-    pub fn get(self: Row, comptime T: type, index: usize) GetReturnType(T) {
+    pub fn columnCount(self: Row) i32 {
+        return self.stmt.columnCount();
+    }
+
+    pub fn columnName(self: Row, col: usize) []const u8 {
+        return std.mem.span(self.stmt.columnName(col));
+    }
+
+    pub fn columnType(self: Row, index: usize) ColumnType {
+        return self.stmt.columnType(index);
+    }
+
+    pub fn get(self: Row, comptime T: type, col: usize) GetReturnType(T) {
         switch (T) {
-            i64 => return self.int(index),
-            ?i64 => return self.nullableInt(index),
-            bool => return self.boolean(index),
-            ?bool => return self.nullableBoolean(index),
-            ?[]const u8 => return self.nullableText(index),
-            []const u8 => return self.text(index),
-            ?Blob => return self.nullableBlob(index),
-            Blob => return self.blob(index),
-            f64 => return self.float(index),
-            ?f64 => return self.nullableFloat(index),
+            i64 => return self.int(col),
+            ?i64 => return self.nullableInt(col),
+            bool => return self.boolean(col),
+            ?bool => return self.nullableBoolean(col),
+            ?[]const u8 => return self.nullableText(col),
+            []const u8 => return self.text(col),
+            ?Blob => return self.nullableBlob(col),
+            Blob => return self.blob(col),
+            f64 => return self.float(col),
+            ?f64 => return self.nullableFloat(col),
             else => @compileError("unsupport column type: " ++ @typeName(T)),
         }
     }
@@ -374,49 +386,49 @@ pub const Row = struct {
         }
     }
 
-    pub fn boolean(self: Row, index: usize) bool {
-        return self.stmt.boolean(index);
+    pub fn boolean(self: Row, col: usize) bool {
+        return self.stmt.boolean(col);
     }
-    pub fn nullableBoolean(self: Row, index: usize) ?bool {
-        return self.stmt.nullableBoolean(index);
-    }
-
-    pub fn int(self: Row, index: usize) i64 {
-        return self.stmt.int(index);
-    }
-    pub fn nullableInt(self: Row, index: usize) ?i64 {
-        return self.stmt.nullableInt(index);
+    pub fn nullableBoolean(self: Row, col: usize) ?bool {
+        return self.stmt.nullableBoolean(col);
     }
 
-    pub fn float(self: Row, index: usize) f64 {
-        return self.stmt.float(index);
+    pub fn int(self: Row, col: usize) i64 {
+        return self.stmt.int(col);
     }
-    pub fn nullableFloat(self: Row, index: usize) ?f64 {
-        return self.stmt.nullableFloat(index);
-    }
-
-    pub fn text(self: Row, index: usize) []const u8 {
-        return self.stmt.text(index);
-    }
-    pub fn nullableText(self: Row, index: usize) ?[]const u8 {
-        return self.stmt.nullableText(index);
+    pub fn nullableInt(self: Row, col: usize) ?i64 {
+        return self.stmt.nullableInt(col);
     }
 
-    pub fn textZ(self: Row, index: usize) [*:0]const u8 {
-        return self.stmt.textZ(index);
+    pub fn float(self: Row, col: usize) f64 {
+        return self.stmt.float(col);
     }
-    pub fn nullableTextZ(self: Row, index: usize) ?[*:0]const u8 {
-        return self.stmt.nullableTextZ(index);
-    }
-    pub fn textLen(self: Row, index: usize) usize {
-        return self.stmt.textLen(index);
+    pub fn nullableFloat(self: Row, col: usize) ?f64 {
+        return self.stmt.nullableFloat(col);
     }
 
-    pub fn blob(self: Row, index: usize) []const u8 {
-        return self.stmt.blob(index);
+    pub fn text(self: Row, col: usize) []const u8 {
+        return self.stmt.text(col);
     }
-    pub fn nullableBlob(self: Row, index: usize) ?[]const u8 {
-        return self.stmt.nullableBlob(index);
+    pub fn nullableText(self: Row, col: usize) ?[]const u8 {
+        return self.stmt.nullableText(col);
+    }
+
+    pub fn textZ(self: Row, col: usize) [*:0]const u8 {
+        return self.stmt.textZ(col);
+    }
+    pub fn nullableTextZ(self: Row, col: usize) ?[*:0]const u8 {
+        return self.stmt.nullableTextZ(col);
+    }
+    pub fn textLen(self: Row, col: usize) usize {
+        return self.stmt.textLen(col);
+    }
+
+    pub fn blob(self: Row, col: usize) []const u8 {
+        return self.stmt.blob(col);
+    }
+    pub fn nullableBlob(self: Row, col: usize) ?[]const u8 {
+        return self.stmt.nullableBlob(col);
     }
 };
 
@@ -870,9 +882,18 @@ test "statement meta" {
     try t.expectEqualStrings("name", std.mem.span(row.stmt.columnName(1)));
     try t.expectEqualStrings("other", std.mem.span(row.stmt.columnName(2)));
 
+    try t.expectEqual(@as(i32, 3), row.columnCount());
+    try t.expectEqualStrings("id",row.columnName(0));
+    try t.expectEqualStrings("name",row.columnName(1));
+    try t.expectEqualStrings("other",row.columnName(2));
+
     try t.expectEqual(ColumnType.int, row.stmt.columnType(0));
     try t.expectEqual(ColumnType.text, row.stmt.columnType(1));
     try t.expectEqual(ColumnType.null, row.stmt.columnType(2));
+
+    try t.expectEqual(ColumnType.int, row.columnType(0));
+    try t.expectEqual(ColumnType.text, row.columnType(1));
+    try t.expectEqual(ColumnType.null, row.columnType(2));
 }
 
 fn testDB() Conn {
