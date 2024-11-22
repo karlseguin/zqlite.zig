@@ -350,6 +350,30 @@ pub const Row = struct {
         return self.stmt.deinitErr();
     }
 
+    pub fn get(self: Row, comptime T: type, index: usize) GetReturnType(T) {
+        switch (T) {
+            i64 => return self.int(index),
+            ?i64 => return self.nullableInt(index),
+            bool => return self.boolean(index),
+            ?bool => return self.nullableBoolean(index),
+            ?[]const u8 => return self.nullableText(index),
+            []const u8 => return self.text(index),
+            ?Blob => return self.nullableBlob(index),
+            Blob => return self.blob(index),
+            f64 => return self.float(index),
+            ?f64 => return self.nullableFloat(index),
+            else => @compileError("unsupport column type: " ++ @typeName(T)),
+        }
+    }
+
+    fn GetReturnType(comptime T: type) type {
+        switch (T) {
+            Blob => return []const u8,
+            ?Blob => return ?[]const u8,
+            else => return T,
+        }
+    }
+
     pub fn boolean(self: Row, index: usize) bool {
         return self.stmt.boolean(index);
     }
@@ -628,6 +652,9 @@ test "boolean" {
 
         try t.expectEqual(true, row.boolean(0));
         try t.expectEqual(true, row.nullableBoolean(1).?);
+
+        try t.expectEqual(true, row.get(bool, 0));
+        try t.expectEqual(true, row.get(?bool, 1).?);
     }
 
     {
@@ -637,6 +664,9 @@ test "boolean" {
 
         try t.expectEqual(false, row.boolean(0));
         try t.expectEqual(false, row.nullableBoolean(1).?);
+
+        try t.expectEqual(false, row.get(bool, 0));
+        try t.expectEqual(false, row.get(?bool, 1).?);
     }
 
     {
@@ -645,6 +675,7 @@ test "boolean" {
         defer row.deinit();
 
         try t.expectEqual(@as(?bool, null), row.nullableBoolean(0));
+        try t.expectEqual(@as(?bool, null), row.get(?bool, 0));
     }
 }
 
@@ -662,8 +693,14 @@ test "blob/text" {
         try t.expectEqualStrings(&d1, row.blob(0));
         try t.expectEqualStrings(&d2, row.nullableBlob(1).?);
 
+        try t.expectEqualStrings(&d1, row.get(Blob, 0));
+        try t.expectEqualStrings(&d2, row.get(?Blob, 1).?);
+
         try t.expectEqualStrings(&d1, row.text(2));
         try t.expectEqualStrings(&d2, row.nullableText(3).?);
+
+        try t.expectEqualStrings(&d1, row.get([]const u8, 2));
+        try t.expectEqualStrings(&d2, row.get(?[]const u8, 3).?);
 
         try t.expectEqualStrings(&d1, std.mem.span(row.textZ(2)));
         try t.expectEqualStrings(&d2, std.mem.span(row.nullableTextZ(3).?));
@@ -885,14 +922,14 @@ fn queryId(conn: Conn, id: i64) ?TestRow {
 
     return .{
         .row = row,
-        .id = row.int(0),
-        .int = row.int(1),
-        .intn = row.nullableInt(2),
-        .real = row.float(3),
-        .realn = row.nullableFloat(4),
-        .text = row.text(5),
-        .textn = row.nullableText(6),
-        .blob = row.blob(7),
-        .blobn = row.nullableBlob(8),
+        .id = row.get(i64, 0),
+        .int = row.get(i64, 1),
+        .intn = row.get(?i64, 2),
+        .real = row.get(f64, 3),
+        .realn = row.get(?f64, 4),
+        .text = row.get([]const u8, 5),
+        .textn = row.get(?[]const u8, 6),
+        .blob = row.get(Blob, 7),
+        .blobn = row.get(?Blob, 8),
     };
 }

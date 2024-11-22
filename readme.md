@@ -144,7 +144,14 @@ if (rows.err) |err| {
 ```
 
 ## Row Getters
-A `row` exposes the following functions to fetch data:
+There are two APIs for fetching column data. The first is the generic `get`:
+
+```zig
+get(T, index) T
+```
+Where `T` can be: `i64`, 'f64', 'bool', '[]const' or `zqlite.Blob` or their nullable equivalent (i.e. `?i64`). The return type for `zqlite.Blob` is `[]const u8`.
+
+Alternatively, the following can be used:
 
 * `boolean(index) bool`
 * `nullableBoolean(index) ?bool`
