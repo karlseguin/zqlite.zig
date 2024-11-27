@@ -223,7 +223,7 @@ pub const Stmt = struct {
         }
         return self.textZ(index);
     }
-    pub fn textLen(self: Stmt, index: usize) usize {
+    pub fn columnBytes(self: Stmt, index: usize) usize {
         const stmt = self.stmt;
         const c_index: c_int = @intCast(index);
         return @intCast(c.sqlite3_column_bytes(stmt, c_index));
@@ -420,8 +420,8 @@ pub const Row = struct {
     pub fn nullableTextZ(self: Row, col: usize) ?[*:0]const u8 {
         return self.stmt.nullableTextZ(col);
     }
-    pub fn textLen(self: Row, col: usize) usize {
-        return self.stmt.textLen(col);
+    pub fn columnBytes(self: Row, col: usize) usize {
+        return self.stmt.columnBytes(col);
     }
 
     pub fn blob(self: Row, col: usize) []const u8 {
@@ -716,8 +716,8 @@ test "blob/text" {
 
         try t.expectEqualStrings(&d1, std.mem.span(row.textZ(2)));
         try t.expectEqualStrings(&d2, std.mem.span(row.nullableTextZ(3).?));
-        try t.expectEqual(@as(usize, 4), row.textLen(2));
-        try t.expectEqual(@as(usize, 5), row.textLen(3));
+        try t.expectEqual(@as(usize, 4), row.columnBytes(2));
+        try t.expectEqual(@as(usize, 5), row.columnBytes(3));
     }
 }
 
