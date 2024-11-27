@@ -67,7 +67,7 @@ pub const Conn = struct {
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
         }
-        return .{.stmt = n_stmt.?, .conn = self.conn};
+        return .{ .stmt = n_stmt.?, .conn = self.conn };
     }
 
     pub fn changes(self: Conn) usize {
@@ -141,7 +141,7 @@ pub const Stmt = struct {
     }
 
     pub fn bindValue(self: Stmt, value: anytype, index: usize) !void {
-        try _bind(@TypeOf(value), self.stmt, value, index + 1);
+        try _bind(@TypeOf(value), self.stmt, value, @intCast(index + 1));
     }
 
     pub fn step(self: Stmt) !bool {
@@ -883,9 +883,9 @@ test "statement meta" {
     try t.expectEqualStrings("other", std.mem.span(row.stmt.columnName(2)));
 
     try t.expectEqual(@as(i32, 3), row.columnCount());
-    try t.expectEqualStrings("id",row.columnName(0));
-    try t.expectEqualStrings("name",row.columnName(1));
-    try t.expectEqualStrings("other",row.columnName(2));
+    try t.expectEqualStrings("id", row.columnName(0));
+    try t.expectEqualStrings("name", row.columnName(1));
+    try t.expectEqualStrings("other", row.columnName(2));
 
     try t.expectEqual(ColumnType.int, row.stmt.columnType(0));
     try t.expectEqual(ColumnType.text, row.stmt.columnType(1));
