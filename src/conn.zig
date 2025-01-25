@@ -283,7 +283,7 @@ pub const Stmt = struct {
             },
             .pointer => |ptr| {
                 switch (ptr.size) {
-                    .One => switch (@typeInfo(ptr.child)) {
+                    .one => switch (@typeInfo(ptr.child)) {
                         .array => |arr| {
                             if (arr.child == u8) {
                                 rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC);
@@ -293,7 +293,7 @@ pub const Stmt = struct {
                         },
                         else => bindError(T),
                     },
-                    .Slice => switch (ptr.child) {
+                    .slice => switch (ptr.child) {
                         u8 => rc = c.sqlite3_bind_text(stmt, bind_index, value.ptr, @intCast(value.len), c.SQLITE_STATIC),
                         else => bindError(T),
                     },
