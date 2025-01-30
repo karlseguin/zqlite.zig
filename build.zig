@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) !void {
     const lib_test = b.addTest(.{
         .target = target,
         .optimize = optimize,
-        .test_runner = b.path("test_runner.zig"),
+        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
         .root_source_file = b.path("src/zqlite.zig"),
     });
     lib_test.addCSourceFile(.{
