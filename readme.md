@@ -161,8 +161,8 @@ Alternatively, the following can be used:
 * `nullableFloat(index) ?f64`
 * `text(index) []const u8`
 * `nullableText(index) ?[]const u8`
-* `textZ(index) [:0]const u8`
-* `nullableTextZ(index) ?[:0]const u8`
+* `cString(index) [:0]const u8`
+* `nullableCString(index) ?[:0]const u8`
 * `blob(index) []const u8`
 * `nullableBlob(index) ?[]const u8`
 

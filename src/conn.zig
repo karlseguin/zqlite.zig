@@ -212,6 +212,23 @@ pub const Stmt = struct {
         return self.text(index);
     }
 
+    pub fn cString(self: Stmt, index: usize) [:0]const u8 {
+        const stmt = self.stmt;
+        const c_index: c_int = @intCast(index);
+        const data = c.sqlite3_column_text(stmt, c_index);
+        const len = c.sqlite3_column_bytes(stmt, c_index);
+        if (len == 0) {
+            return "";
+        }
+        return @as([*c]const u8, @ptrCast(data))[0..@intCast(len) :0];
+    }
+    pub fn nullableCString(self: Stmt, index: usize) ?[:0]const u8 {
+        if (c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL) {
+            return null;
+        }
+        return self.cString(index);
+    }
+
     pub fn textZ(self: Stmt, index: usize) [*:0]const u8 {
         const stmt = self.stmt;
         const c_index: c_int = @intCast(index);
@@ -223,6 +240,7 @@ pub const Stmt = struct {
         }
         return self.textZ(index);
     }
+
     pub fn columnBytes(self: Stmt, index: usize) usize {
         const stmt = self.stmt;
         const c_index: c_int = @intCast(index);
@@ -370,8 +388,8 @@ pub const Row = struct {
             ?bool => return self.nullableBoolean(col),
             ?[]const u8 => return self.nullableText(col),
             []const u8 => return self.text(col),
-            ?[:0]const u8 => return self.nullableTextZ(col),
-            [:0]const u8 => return self.textZ(col),
+            ?[:0]const u8 => return self.nullableCString(col),
+            [:0]const u8 => return self.cString(col),
             ?Blob => return self.nullableBlob(col),
             Blob => return self.blob(col),
             f64 => return self.float(col),
@@ -414,6 +432,13 @@ pub const Row = struct {
     }
     pub fn nullableText(self: Row, col: usize) ?[]const u8 {
         return self.stmt.nullableText(col);
+    }
+
+    pub fn cString(self: Row, col: usize) [:0]const u8 {
+        return self.stmt.cString(col);
+    }
+    pub fn nullableCString(self: Row, col: usize) ?[:0]const u8 {
+        return self.stmt.nullableCString(col);
     }
 
     pub fn textZ(self: Row, col: usize) [*:0]const u8 {
