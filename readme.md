@@ -105,7 +105,7 @@ The `Conn` type returned by `open` has the following functions:
 * `busyTimeout(ms)` - Sets the busyHandler for the connection. See https://www.sqlite.org/c3ref/busy_timeout.html
 
 # Row and Rows
-Both `row` and `rows` wrap an `zqlite.Stmt` which itself is a thin wrapper around an `*c.sqlite3_stmt`. 
+Both `row` and `rows` wrap an `zqlite.Stmt` which itself is a thin wrapper around an `*c.sqlite3_stmt`.
 
 While `zqlite.Row` exposes a `deinit` and `deinitErr` method, it should only be called when the row was fetched directly from `conn.row(...)`:
 
@@ -139,7 +139,7 @@ while (rows.next()) |row| {
 }
 
 if (rows.err) |err| {
-    // something went wrong 
+    // something went wrong
 }
 ```
 
@@ -149,7 +149,7 @@ There are two APIs for fetching column data. The first is the generic `get`:
 ```zig
 get(T, index) T
 ```
-Where `T` can be: `i64`, 'f64', 'bool', '[]const' or `zqlite.Blob` or their nullable equivalent (i.e. `?i64`). The return type for `zqlite.Blob` is `[]const u8`.
+Where `T` can be: `i64`, 'f64', 'bool', '[]const u8', '[:0]const u8' or `zqlite.Blob` or their nullable equivalent (i.e. `?i64`). The return type for `zqlite.Blob` is `[]const u8`.
 
 Alternatively, the following can be used:
 
@@ -157,10 +157,12 @@ Alternatively, the following can be used:
 * `nullableBoolean(index) ?bool`
 * `int(index) i64`
 * `nullableInt(index) ?i64`
-* `float(index) i64`
-* `nullableFloat(index) f64`
+* `float(index) f64`
+* `nullableFloat(index) ?f64`
 * `text(index) []const u8`
 * `nullableText(index) ?[]const u8`
+* `cString(index) [:0]const u8`
+* `nullableCString(index) ?[:0]const u8`
 * `blob(index) []const u8`
 * `nullableBlob(index) ?[]const u8`
 
@@ -201,7 +203,7 @@ var pool = try zqlite.Pool.init(allocator, .{
 
     // The zqlite.OpenFlags to use when opening each connection in the pool
     // Defaults are as shown here:
-    .flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode  
+    .flags = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode
 
     // Callback function to execute for each connection in the pool when opened
     .on_connection = null,
