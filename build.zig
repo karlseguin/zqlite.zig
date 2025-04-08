@@ -17,13 +17,14 @@ pub fn build(b: *std.Build) !void {
     const lib_test = b.addTest(.{
         .target = target,
         .optimize = optimize,
-        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
         .root_source_file = b.path("src/zqlite.zig"),
+        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
     });
     lib_test.addCSourceFile(.{
         .file = b.path("lib/sqlite3.c"),
         .flags = sqlite3_build,
     });
+    lib_test.addIncludePath(lib_path);
     lib_test.linkLibC();
 
     const run_test = b.addRunArtifact(lib_test);
