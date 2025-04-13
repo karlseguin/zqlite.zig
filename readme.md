@@ -172,7 +172,7 @@ The `nullableXYZ` functions can safely be called on a `not null` column. The non
 The `transaction()`, `exclusiveTransaction()`, `commit()` and `rollback()` functions are simply wrappers to `conn.execNoArgs("begin")`, `conn.execNoArgs("begin exclusive")`, `conn.execNoArgs("commit")` and `conn.execNoArgs("rollback")`
 
 ```zig
-conn.transaction()
+try conn.transaction();
 errdefer conn.rollback();
 
 try conn.exec(...);
