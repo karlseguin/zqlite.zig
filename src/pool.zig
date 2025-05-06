@@ -16,8 +16,10 @@ pub const Pool = struct {
         size: usize = 5,
         flags: c_int = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode,
         path: [*:0]const u8,
-        on_connection: ?*const fn (conn: Conn) anyerror!void = null,
-        on_first_connection: ?*const fn (conn: Conn) anyerror!void = null,
+        on_connection: ?*const fn (conn: Conn, context: ?*const anyopaque) anyerror!void = null,
+        on_first_connection: ?*const fn (conn: Conn, context: ?*const anyopaque) anyerror!void = null,
+        on_connection_context: ?*const anyopaque = null,
+        on_first_connection_context: ?*const anyopaque = null,
     };
 
     pub fn init(allocator: Allocator, config: Config) !*Pool {
@@ -54,11 +56,11 @@ pub const Pool = struct {
             init_count += 1;
             if (i == 0) {
                 if (config.on_first_connection) |f| {
-                    try f(conn);
+                    try f(conn, config.on_first_connection_context);
                 }
             }
             if (on_connection) |f| {
-                try f(conn);
+                try f(conn, config.on_connection_context);
             }
             conns[i] = conn;
         }
@@ -106,11 +108,18 @@ pub const Pool = struct {
 
 const t = std.testing;
 test "pool" {
+    const context = TestCallbackContext{
+        .a = 5,
+        .b = 6,
+    };
+
     var pool = try Pool.init(t.allocator, .{
         .size = 2,
         .path = "/tmp/zqlite.test",
         .on_connection = &testPoolEachConnection,
         .on_first_connection = &testPoolFirstConnection,
+        .on_connection_context = &context,
+        .on_first_connection_context = &context,
     });
     defer pool.deinit();
 
@@ -118,7 +127,9 @@ test "pool" {
     const t2 = try std.Thread.spawn(.{}, testPool, .{pool});
     const t3 = try std.Thread.spawn(.{}, testPool, .{pool});
 
-    t1.join(); t2.join(); t3.join();
+    t1.join();
+    t2.join();
+    t3.join();
 
     const c1 = pool.acquire();
     defer c1.release();
@@ -129,6 +140,11 @@ test "pool" {
 
     try c1.execNoArgs("drop table pool_test");
 }
+
+const TestCallbackContext = struct {
+    a: i32,
+    b: i32,
+};
 
 fn testPool(p: *Pool) void {
     for (0..1000) |_| {
@@ -141,7 +157,12 @@ fn testPool(p: *Pool) void {
     }
 }
 
-fn testPoolFirstConnection(conn: Conn) !void {
+fn testPoolFirstConnection(conn: Conn, raw_context: ?*const anyopaque) !void {
+    const context: *const TestCallbackContext = if (raw_context) |rc| @ptrCast(@alignCast(rc)) else {
+        return error.TestError;
+    };
+    try std.testing.expect(context.a == 5);
+    try std.testing.expect(context.b == 6);
     try conn.execNoArgs("pragma journal_mode=wal");
 
     // This is not safe and can result in corruption. This is only set
@@ -154,6 +175,11 @@ fn testPoolFirstConnection(conn: Conn) !void {
     try conn.execNoArgs("insert into pool_test (cnt) values (0)");
 }
 
-fn testPoolEachConnection(conn: Conn) !void {
+fn testPoolEachConnection(conn: Conn, raw_context: ?*const anyopaque) !void {
+    const context: *const TestCallbackContext = if (raw_context) |rc| @ptrCast(@alignCast(rc)) else {
+        return error.TestError;
+    };
+    try std.testing.expect(context.a == 5);
+    try std.testing.expect(context.b == 6);
     return conn.busyTimeout(5000);
 }
