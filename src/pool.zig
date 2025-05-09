@@ -16,10 +16,10 @@ pub const Pool = struct {
         size: usize = 5,
         flags: c_int = zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode,
         path: [*:0]const u8,
-        on_connection: ?*const fn (conn: Conn, context: ?*const anyopaque) anyerror!void = null,
-        on_first_connection: ?*const fn (conn: Conn, context: ?*const anyopaque) anyerror!void = null,
-        on_connection_context: ?*const anyopaque = null,
-        on_first_connection_context: ?*const anyopaque = null,
+        on_connection: ?*const fn (conn: Conn, context: ?*anyopaque) anyerror!void = null,
+        on_first_connection: ?*const fn (conn: Conn, context: ?*anyopaque) anyerror!void = null,
+        on_connection_context: ?*anyopaque = null,
+        on_first_connection_context: ?*anyopaque = null,
     };
 
     pub fn init(allocator: Allocator, config: Config) !*Pool {
@@ -108,7 +108,7 @@ pub const Pool = struct {
 
 const t = std.testing;
 test "pool" {
-    const context = TestCallbackContext{
+    var context = TestCallbackContext{
         .a = 5,
         .b = 6,
     };
@@ -157,7 +157,7 @@ fn testPool(p: *Pool) void {
     }
 }
 
-fn testPoolFirstConnection(conn: Conn, raw_context: ?*const anyopaque) !void {
+fn testPoolFirstConnection(conn: Conn, raw_context: ?*anyopaque) !void {
     const context: *const TestCallbackContext = if (raw_context) |rc| @ptrCast(@alignCast(rc)) else {
         return error.TestError;
     };
@@ -175,7 +175,7 @@ fn testPoolFirstConnection(conn: Conn, raw_context: ?*const anyopaque) !void {
     try conn.execNoArgs("insert into pool_test (cnt) values (0)");
 }
 
-fn testPoolEachConnection(conn: Conn, raw_context: ?*const anyopaque) !void {
+fn testPoolEachConnection(conn: Conn, raw_context: ?*anyopaque) !void {
     const context: *const TestCallbackContext = if (raw_context) |rc| @ptrCast(@alignCast(rc)) else {
         return error.TestError;
     };
