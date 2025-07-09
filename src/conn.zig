@@ -167,6 +167,20 @@ pub const Stmt = struct {
         }
     }
 
+    pub fn reset(self: Stmt) !void {
+        switch (c.sqlite3_reset(self.stmt)) {
+            c.SQLITE_OK => return,
+            else => |rc| return errorFromCode(rc),
+        }
+    }
+
+    pub fn clearBindings(self: Stmt) !void {
+        switch (c.sqlite3_clear_bindings(self.stmt)) {
+            c.SQLITE_OK => return,
+            else => |rc| return errorFromCode(rc),
+        }
+    }
+
     pub fn boolean(self: Stmt, index: usize) bool {
         return self.int(index) == 1;
     }
