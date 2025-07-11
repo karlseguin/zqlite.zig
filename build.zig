@@ -11,13 +11,13 @@ pub fn build(b: *std.Build) !void {
 
     const zqlite = b.addModule("zqlite", .{
         .root_source_file = b.path("src/zqlite.zig"),
+        .target = target,
+        .optimize = optimize,
     });
     zqlite.addIncludePath(lib_path);
 
     const lib_test = b.addTest(.{
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/zqlite.zig"),
+        .root_module = zqlite,
         .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
     });
     lib_test.addCSourceFile(.{
