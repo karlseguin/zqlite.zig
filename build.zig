@@ -9,25 +9,36 @@ pub fn build(b: *std.Build) !void {
 
     const lib_path = b.path("lib");
 
-    const zqlite = b.addModule("zqlite", .{
+    const module = b.addModule("zqlite", .{
         .root_source_file = b.path("src/zqlite.zig"),
         .target = target,
         .optimize = optimize,
     });
-    zqlite.addIncludePath(lib_path);
 
-    const lib_test = b.addTest(.{
-        .root_module = zqlite,
-        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
+    const lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "sqlite",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
     });
-    lib_test.addCSourceFile(.{
+    lib.addIncludePath(lib_path);
+    lib.addCSourceFile(.{
         .file = b.path("lib/sqlite3.c"),
         .flags = sqlite3_build,
     });
-    lib_test.addIncludePath(lib_path);
-    lib_test.linkLibC();
 
-    const run_test = b.addRunArtifact(lib_test);
+    module.linkLibrary(lib);
+
+    const tests = b.addTest(.{
+        .root_module = module,
+        .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
+    });
+    tests.linkLibrary(lib);
+
+    const run_test = b.addRunArtifact(tests);
     run_test.has_side_effects = true;
 
     const test_step = b.step("test", "Run unit tests");
