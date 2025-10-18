@@ -29,7 +29,7 @@ try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"})
 Unless `zqlite.OpenFlags.ReadOnly` is set in the open flags, `zqlite.OpenFlags.ReadWrite` is assumed (in other words, the database opens in read-write by default, and the `ReadOnly` flag must be used to open it in readony mode.)
 
 ## Install
-This library is tested with SQLite3 3.46.1 .
+This library is tested with SQLite3 3.50.4.
 
 1) Add zqlite as a dependency in your `build.zig.zon`:
 
