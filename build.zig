@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) !void {
         }),
     });
     lib.addIncludePath(lib_path);
+    lib.installHeadersDirectory(lib_path, "", .{});
     lib.addCSourceFile(.{
         .file = b.path("lib/sqlite3.c"),
         .flags = sqlite3_build,
