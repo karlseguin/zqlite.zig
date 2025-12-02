@@ -54,6 +54,8 @@ pub const Pool = struct {
             conn._pool = pool;
 
             init_count += 1;
+            conns[i] = conn;
+
             if (i == 0) {
                 if (config.on_first_connection) |f| {
                     try f(conn, config.on_first_connection_context);
@@ -62,7 +64,6 @@ pub const Pool = struct {
             if (on_connection) |f| {
                 try f(conn, config.on_connection_context);
             }
-            conns[i] = conn;
         }
 
         return pool;
