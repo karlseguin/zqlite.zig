@@ -230,14 +230,14 @@ var pool = zqlite.Pool.init(allocator, .{
 
 // Our size is 5, but this will only be executed once, for the first
 // connection in our pool
-fn initializeDB(conn: Conn) !void {
+fn initializeDB(conn: Conn, _: ?*anyopaque) !void {
     try conn.execNoArgs("create table if not exists testing(id int)");
 }
 
 // Our size is 5, so this will be executed 5 times, once for each
 // connection. `initializeDB` is guaranteed to be called before this
 // function is called.
-fn initializeConnection(conn: Conn) !void {
+fn initializeConnection(conn: Conn, _: ?*anyopaque) !void {
     return conn.busyTimeout(1000);
 }
 ```
