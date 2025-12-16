@@ -181,6 +181,15 @@ pub const Stmt = struct {
         }
     }
 
+    pub fn expandedSql(self: Stmt, allocator: std.mem.Allocator) ![]u8 {
+        const c_str = c.sqlite3_expanded_sql(self.stmt) orelse return error.NoMem;
+        defer c.sqlite3_free(c_str);
+        const len = std.mem.len(c_str);
+        const result = try allocator.alloc(u8, len);
+        @memcpy(result, c_str[0..len]);
+        return result;
+    }
+
     pub fn boolean(self: Stmt, index: usize) bool {
         return self.int(index) == 1;
     }
