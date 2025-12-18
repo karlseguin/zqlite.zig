@@ -116,6 +116,22 @@ pub const Conn = struct {
     pub fn lastError(self: Conn) [*:0]const u8 {
         return @as([*:0]const u8, c.sqlite3_errmsg(self.conn));
     }
+
+    // Returns an object with alternative implementation of
+    // exec, row, rows, and prepare, where params ? can
+    // be used with slices or arrays.
+    //
+    // Note: Only ? and ?NNN are supported.
+    //
+    // For example, the following:
+    //    const ids: []const i64 = &.{ 1, 2, 3 };
+    //    try conn.variadic().exec("select 1 from table where id in (?)", .{ids});
+    //
+    // ...is equivalent to:
+    //    try conn.variadic().exec("select 1 from table where id in (?, ?, ?)", .{1,2,3});
+    pub fn variadic(self: Conn) VariadicBinder {
+        return .{ .conn = &self };
+    }
 };
 
 pub const Stmt = struct {
@@ -513,6 +529,246 @@ pub const Rows = struct {
     }
 };
 
+const VariadicBinder = struct {
+    conn: *const Conn,
+
+    const Allocator = std.mem.Allocator;
+
+    fn init(conn: *Conn) @This() {
+        return .{ .conn = conn };
+    }
+
+    pub fn row(
+        self: @This(),
+        allocator: Allocator,
+        comptime sql: []const u8,
+        values: anytype,
+    ) !?Row {
+        const stmt = try self.prepareAndBind(allocator, sql, values);
+        errdefer stmt.deinit();
+
+        if (try stmt.step() == false) {
+            stmt.deinit();
+            return null;
+        }
+        return .{ .stmt = stmt };
+    }
+
+    pub fn rows(
+        self: @This(),
+        allocator: Allocator,
+        comptime sql: []const u8,
+        values: anytype,
+    ) !Rows {
+        const stmt = try self.prepareAndBind(allocator, sql, values);
+        errdefer stmt.deinit();
+        return .{ .stmt = stmt, .err = null };
+    }
+
+    pub fn exec(
+        self: @This(),
+        allocator: Allocator,
+        comptime sql: []const u8,
+        values: anytype,
+    ) !void {
+        const stmt = try self.prepareAndBind(allocator, sql, values);
+        errdefer stmt.deinit();
+
+        return stmt.stepToCompletion();
+    }
+
+    pub fn prepareAndBind(
+        self: @This(),
+        allocator: Allocator,
+        comptime sql: []const u8,
+        values: anytype,
+    ) !Stmt {
+        // Find and parse the parameters on comptime to
+        // save some time parsing and searching during runtime.
+        const indices = comptime getParamIndices(sql);
+
+        var buf: std.Io.Writer.Allocating = .init(allocator);
+        defer buf.deinit();
+
+        var str_index: usize = 0;
+        inline for (indices) |entry| {
+            comptime if (entry.arg_index >= values.len)
+                @compileError("not enough sql parameter to bind");
+
+            const value = values[entry.arg_index];
+
+            defer str_index = entry.str_index + entry.num_digits + 1;
+
+            // Mixing ? and ?NNN is a bit quirky in sqlite.
+            // Consider the following:
+            //   "?2 ?1 ?" == "?2 ?1 ?3"
+            //   "? ?3 ?"  == "?1 ?3 ?4"
+            //   "? ? ?1"  == "?1 ?2 ?1"
+            //
+            // So to simplify the splatting, all ?NNN are replaced with ?,
+            // at the expense of explictly binding all the parameters.
+
+            try buf.writer.writeAll(sql[str_index..entry.str_index]);
+            try buf.writer.writeByte('?');
+
+            if (comptime isIterable(@TypeOf(value))) {
+                const count = value.len - 1;
+                const limit = 64;
+                switch (count) {
+                    0...limit => |n| {
+                        try buf.writer.writeAll(
+                            &comptime stringRepeat(n, ", ?"),
+                        );
+                    },
+                    else => {
+                        try buf.writer.writeAll(
+                            &comptime stringRepeat(limit, ", ?"),
+                        );
+                        for (0..count - limit) |_|
+                            try buf.writer.writeAll(", ?");
+                    },
+                }
+            }
+        }
+
+        try buf.writer.writeAll(sql[str_index..]);
+        const stmt = try self.conn.prepare(buf.written());
+
+        var param_index: usize = 0;
+        inline for (indices) |entry| {
+            const value = values[entry.arg_index];
+
+            if (comptime isIterable(@TypeOf(value))) {
+                for (value) |item| {
+                    try stmt.bindValue(item, param_index);
+                    param_index += 1;
+                }
+            } else {
+                try stmt.bindValue(value, param_index);
+                param_index += 1;
+            }
+        }
+
+        return stmt;
+    }
+
+    const IndexEntry = struct {
+        // the position where the ? is in the sql string
+        str_index: usize = 0,
+
+        // the parsed number after ? (e.g. ?NNN) if any,
+        // otherwise the value is based on highest arg_index seen so far
+        arg_index: usize = 0,
+
+        // how many digits after ? (e.g. ?NNNNN would be 5)
+        num_digits: usize = 0,
+    };
+
+    fn getParamIndices(comptime str: []const u8) [CountParams(str)]IndexEntry {
+        comptime {
+            var indices: [CountParams(str)]IndexEntry = @splat(.{});
+            if (indices.len == 0) return indices;
+
+            var index: usize = 0;
+            var arg_index: usize = 0;
+            var str_index: usize = 0;
+
+            while (str_index < str.len) {
+                str_index = std.mem.indexOfScalarPos(u8, str, str_index, '?') orelse break;
+
+                defer {
+                    index += 1;
+                    str_index += 1;
+                }
+
+                const last_digit = blk: {
+                    var i = str_index + 1;
+                    while (i < str.len and std.ascii.isDigit(str[i]))
+                        i += 1;
+                    break :blk i;
+                };
+
+                const has_digits = last_digit - 1 > str_index;
+                if (has_digits) {
+                    const digits = str[str_index + 1 .. last_digit];
+
+                    var parsed = (std.fmt.parseInt(u8, digits, 10) catch unreachable);
+                    parsed -= 1; // deduct since ?NNN is starts at 1
+
+                    indices[index] = .{
+                        .str_index = str_index,
+                        .arg_index = parsed,
+                        .num_digits = digits.len,
+                    };
+
+                    if (parsed >= index)
+                        arg_index = parsed + 1
+                    else
+                        arg_index += 1;
+                } else {
+                    indices[index] = .{
+                        .str_index = str_index,
+                        .arg_index = arg_index,
+                        .num_digits = 0,
+                    };
+                    arg_index += 1;
+                }
+            }
+
+            return indices;
+        }
+    }
+
+    // Returns the total number of ? in the string
+    fn CountParams(comptime str: []const u8) usize {
+        return comptime std.mem.count(u8, str, "?");
+    }
+
+    // Returns true if value is a slice, array or anything that
+    // can be used in for(value) |_| { ... }
+    //
+    // Note: comptime-known slices or tuples cannot be used since
+    // they require inline for loops.
+    fn isIterable(value: type) bool {
+        comptime {
+            return switch (@typeInfo(value)) {
+                .pointer => |ptr| {
+                    return switch (ptr.size) {
+                        .many, .slice => true,
+                        .one => switch (@typeInfo(ptr.child)) {
+                            .array => true,
+                            else => false,
+                            .@"struct" => |s| if (s.is_tuple)
+                                @compileError("Cannot use a slice literal, specify the values without using a slice if the values are known already")
+                            else
+                                false,
+                        },
+                        else => false,
+                    };
+                },
+                .@"struct" => |s| if (s.is_tuple)
+                    @compileError("Cannot use a nested tuple, specify the values without using a nested tuple if the values are known already")
+                else
+                    false,
+                .array => true,
+                else => false,
+            };
+        }
+    }
+
+    fn stringRepeat(comptime count: u16, comptime str: []const u8) [count * str.len]u8 {
+        comptime {
+            var buf: [count * str.len]u8 = @splat(0);
+            for (0..count) |i| {
+                const j = i * str.len;
+                @memcpy(buf[j .. j + str.len], str);
+            }
+
+            return buf;
+        }
+    }
+};
+
 fn errorFromCode(result: c_int) Error {
     return switch (result) {
         c.SQLITE_ABORT => error.Abort,
@@ -701,6 +957,34 @@ test "bind null optionals" {
     try t.expectEqual(@as(?f64, null), row.realn);
     try t.expectEqual(@as(?[]const u8, null), row.textn);
     try t.expectEqual(@as(?[]const u8, null), row.blobn);
+}
+
+test "bind variadic" {
+    const allocator = std.testing.allocator;
+    const conn = testDB();
+    defer conn.tryClose() catch unreachable;
+
+    const ids: []const i64 = &.{ 1, 2, 3 };
+
+    const stmt = try conn.variadic().prepareAndBind(allocator,
+        \\
+        \\ select * from test
+        \\ where id in (?)
+        \\    or id = ?2
+        \\    or id in (?1)
+    , .{ ids, 456 });
+    defer stmt.deinit();
+
+    const expanded = try stmt.expandedSql(allocator);
+    defer allocator.free(expanded);
+
+    try std.testing.expectEqualStrings(
+        \\
+        \\ select * from test
+        \\ where id in (1, 2, 3)
+        \\    or id = 456
+        \\    or id in (1, 2, 3)
+    , expanded);
 }
 
 test "boolean" {
