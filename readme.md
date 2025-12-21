@@ -100,7 +100,7 @@ The `Conn` type returned by `open` has the following functions:
 * `transaction() !void` and `exclusiveTransaction() !void` - begins a transaction
 * `commit() !void` and `rollback() void` - commits and rollback the current transaction
 * `prepare(sql, args) !zqlite.Stmt` - returns a thin wrapper around a `*c.sqlite3_stmt`. `row` and `rows` wrap this type.
-* `close() void` and `tryClsoe() !void` - closes the database. `close()` silently ignores any error, if you care about the error, use `tryClose()`
+* `close() void` and `tryClose() !void` - closes the database. `close()` silently ignores any error, if you care about the error, use `tryClose()`
 * `busyTimeout(ms)` - Sets the busyHandler for the connection. See https://www.sqlite.org/c3ref/busy_timeout.html
 
 # Row and Rows
