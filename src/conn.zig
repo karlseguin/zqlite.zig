@@ -66,9 +66,13 @@ pub const Conn = struct {
         var pz_tail: [*c]const u8 = 0;
         const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, &pz_tail);
         if (pz_tail != 0 and pz_tail.* != 0) {
-            // SQlite only compiles the first statement it finds,
-            // and silently ignores the rest. Make this an error instead.
-            return error.MultipleStatements;
+            var trail_stmt: ?*c.sqlite3_stmt = null;
+            _ = c.sqlite3_prepare_v2(self.conn, pz_tail, @intCast(sql.len), &trail_stmt, null);
+            if (trail_stmt != null) {
+                // SQlite only compiles the first statement it finds,
+                // and silently ignores the rest. Make this an error instead.
+                return error.MultipleStatements;
+            }
         }
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
@@ -955,6 +959,10 @@ test "statement meta" {
 test "preparing multiple statements" {
     const conn = testDB();
     defer conn.tryClose() catch unreachable;
+
+    try conn.exec("--test\nSELECT 1 FROM test; ", .{});
+
+    try conn.exec("SELECT 1 FROM test;--test", .{});
 
     try t.expectError(
         error.MultipleStatements,
