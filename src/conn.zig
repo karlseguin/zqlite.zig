@@ -4,6 +4,7 @@ const c = @cImport(@cInclude("sqlite3.h"));
 const zqlite = @import("zqlite.zig");
 const Blob = zqlite.Blob;
 const Error = zqlite.Error;
+const PrepareError = error{MultipleStatements};
 
 pub const Conn = struct {
     conn: *c.sqlite3,
@@ -63,7 +64,13 @@ pub const Conn = struct {
 
     pub fn prepare(self: Conn, sql: []const u8) !Stmt {
         var n_stmt: ?*c.sqlite3_stmt = null;
-        const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, null);
+        var pz_tail: [*c]const u8 = 0;
+        const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, &pz_tail);
+        if (pz_tail != 0 and pz_tail.* != 0) {
+            // SQlite only compiles the first statement it finds,
+            // and silently ignores the rest. Make this an error instead.
+            return PrepareError.MultipleStatements;
+        }
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
         }
@@ -944,6 +951,19 @@ test "statement meta" {
     try t.expectEqual(ColumnType.int, row.columnType(0));
     try t.expectEqual(ColumnType.text, row.columnType(1));
     try t.expectEqual(ColumnType.null, row.columnType(2));
+}
+
+test "preparing multiple statements" {
+    const conn = testDB();
+    defer conn.tryClose() catch unreachable;
+
+    try t.expectError(
+        PrepareError.MultipleStatements,
+        conn.exec(
+            \\SELECT 1 FROM test;
+            \\SELECT 2 FROM test;
+        , .{}),
+    );
 }
 
 fn testDB() Conn {
