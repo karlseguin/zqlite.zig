@@ -4,7 +4,6 @@ const c = @cImport(@cInclude("sqlite3.h"));
 const zqlite = @import("zqlite.zig");
 const Blob = zqlite.Blob;
 const Error = zqlite.Error;
-const PrepareError = error{MultipleStatements};
 
 pub const Conn = struct {
     conn: *c.sqlite3,
@@ -69,7 +68,7 @@ pub const Conn = struct {
         if (pz_tail != 0 and pz_tail.* != 0) {
             // SQlite only compiles the first statement it finds,
             // and silently ignores the rest. Make this an error instead.
-            return PrepareError.MultipleStatements;
+            return error.MultipleStatements;
         }
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
@@ -958,7 +957,7 @@ test "preparing multiple statements" {
     defer conn.tryClose() catch unreachable;
 
     try t.expectError(
-        PrepareError.MultipleStatements,
+        error.MultipleStatements,
         conn.exec(
             \\SELECT 1 FROM test;
             \\SELECT 2 FROM test;
