@@ -63,9 +63,9 @@ pub const Conn = struct {
 
     pub fn prepare(self: Conn, sql: []const u8) !Stmt {
         var n_stmt: ?*c.sqlite3_stmt = null;
-        var pz_tail: [*c]const u8 = 0;
-        const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, &pz_tail);
-        if (pz_tail != 0 and pz_tail.* != 0) {
+        var pz_tail: [*:0]const u8 = undefined;
+        const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, @ptrCast(&pz_tail));
+        if (pz_tail[0] != 0) {
             var trail_stmt: ?*c.sqlite3_stmt = null;
             _ = c.sqlite3_prepare_v2(self.conn, pz_tail, @intCast(sql.len), &trail_stmt, null);
             if (trail_stmt != null) {
