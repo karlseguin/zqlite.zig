@@ -64,19 +64,28 @@ pub const Conn = struct {
     pub fn prepare(self: Conn, sql: []const u8) !Stmt {
         var n_stmt: ?*c.sqlite3_stmt = null;
         var pz_tail: [*:0]const u8 = undefined;
+
         const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, @ptrCast(&pz_tail));
-        if (pz_tail[0] != 0) {
-            var trail_stmt: ?*c.sqlite3_stmt = null;
-            _ = c.sqlite3_prepare_v2(self.conn, pz_tail, @intCast(sql.len), &trail_stmt, null);
-            if (trail_stmt != null) {
-                // SQlite only compiles the first statement it finds,
-                // and silently ignores the rest. Make this an error instead.
-                return error.MultipleStatements;
-            }
-        }
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
         }
+
+        if (@import("builtin").mode == .Debug) {
+            if (pz_tail[0] != 0) {
+                var trail_stmt: ?*c.sqlite3_stmt = null;
+                const rc2 = c.sqlite3_prepare_v2(self.conn, pz_tail, @intCast(sql.len), &trail_stmt, null);
+                if (rc2 != c.SQLITE_OK) {
+                    return errorFromCode(rc2);
+                }
+                if (trail_stmt != null) {
+                    _ = c.sqlite3_finalize(trail_stmt);
+                    // SQlite only compiles the first statement it finds,
+                    // and silently ignores the rest. Make this an error instead.
+                    return error.MultipleStatements;
+                }
+            }
+        }
+
         return .{ .stmt = n_stmt.?, .conn = self.conn };
     }
 
