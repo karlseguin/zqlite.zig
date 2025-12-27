@@ -9,35 +9,36 @@ pub fn build(b: *std.Build) !void {
 
     const lib_path = b.path("lib");
 
-    const module = b.addModule("zqlite", .{
+    const mod_zqlite = b.addModule("zqlite", .{
         .root_source_file = b.path("src/zqlite.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const lib = b.addLibrary(.{
-        .linkage = .static,
-        .name = "sqlite",
-        .root_module = b.createModule(.{
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
+    const mod_sqlite = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
     });
-    lib.addIncludePath(lib_path);
-    lib.installHeadersDirectory(lib_path, "", .{});
-    lib.addCSourceFile(.{
+    mod_sqlite.addIncludePath(lib_path);
+    mod_sqlite.addCSourceFile(.{
         .file = b.path("lib/sqlite3.c"),
         .flags = sqlite3_build,
     });
 
-    module.linkLibrary(lib);
+    const lib_sqlite = b.addLibrary(.{
+        .linkage = .static,
+        .name = "sqlite",
+        .root_module = mod_sqlite,
+    });
+    lib_sqlite.installHeadersDirectory(lib_path, "", .{});
+
+    mod_zqlite.linkLibrary(lib_sqlite);
 
     const tests = b.addTest(.{
-        .root_module = module,
+        .root_module = mod_zqlite,
         .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
     });
-    tests.linkLibrary(lib);
 
     const run_test = b.addRunArtifact(tests);
     run_test.has_side_effects = true;
