@@ -63,10 +63,34 @@ pub const Conn = struct {
 
     pub fn prepare(self: Conn, sql: []const u8) !Stmt {
         var n_stmt: ?*c.sqlite3_stmt = null;
-        const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, null);
+        var pz_tail: [*:0]const u8 = undefined;
+
+        const rc = c.sqlite3_prepare_v2(self.conn, sql.ptr, @intCast(sql.len), &n_stmt, @ptrCast(&pz_tail));
         if (rc != c.SQLITE_OK) {
             return errorFromCode(rc);
         }
+
+        if (@import("builtin").mode == .Debug) {
+            if (pz_tail[0] != 0) {
+                // SQlite just returns a pointer to the string we passed in,
+                // which may not be null terminated, so compute the
+                // length of the remaining using pointer arithmetic
+                const tail_len: c_int = @intCast(sql.len - @as(usize, @intCast(pz_tail - sql.ptr)));
+
+                var tail_stmt: ?*c.sqlite3_stmt = null;
+                defer if (tail_stmt != null) {
+                    _ = c.sqlite3_finalize(tail_stmt);
+                };
+
+                const rc2 = c.sqlite3_prepare_v2(self.conn, pz_tail, tail_len, &tail_stmt, null);
+                if (rc2 != c.SQLITE_OK or tail_stmt != null) {
+                    // SQlite only compiles the first statement it finds,
+                    // and silently ignores the rest. Make this an error instead.
+                    return error.MultipleStatements;
+                }
+            }
+        }
+
         return .{ .stmt = n_stmt.?, .conn = self.conn };
     }
 
@@ -944,6 +968,23 @@ test "statement meta" {
     try t.expectEqual(ColumnType.int, row.columnType(0));
     try t.expectEqual(ColumnType.text, row.columnType(1));
     try t.expectEqual(ColumnType.null, row.columnType(2));
+}
+
+test "preparing multiple statements" {
+    const conn = testDB();
+    defer conn.tryClose() catch unreachable;
+
+    try conn.exec("--test\nSELECT 1 FROM test; ", .{});
+
+    try conn.exec("SELECT 1 FROM test;--test", .{});
+
+    try t.expectError(
+        error.MultipleStatements,
+        conn.exec(
+            \\SELECT 1 FROM test;
+            \\SELECT 2 FROM test;
+        , .{}),
+    );
 }
 
 fn testDB() Conn {

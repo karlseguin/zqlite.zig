@@ -92,8 +92,8 @@ The `Conn` type returned by `open` has the following functions:
 
 * `row(sql, args) !?zqlite.Row` - returns an optional row
 * `rows(sql, args) !zqlite.Rows` - returns an iterator that yields rows
-* `exec(sql, args) !void` - executes the statement,
-* `execNoArgs(sql) !void` - micro-optimization if there are no args, `sql` must be a null-terminated string
+* `exec(sql, args) !void` - executes *one* statement,
+* `execNoArgs(sql) !void` - executes one or more statements, `sql` must be a null-terminated string
 * `changes() usize` - the number of rows inserted/updated/deleted by the previous statement
 * `lastInsertedRowId() i64` - the row id of the last inserted row
 * `lastError() [*:0]const u8` - an error string describing the last error
