@@ -1,8 +1,14 @@
 .{
-  .name = .zqlite,
-  .paths = .{""},
-  .version = "0.0.0",
-  .fingerprint = 0x9fb4d74a63da6245,
-  .dependencies = .{
-  },
+    .name = .zqlite,
+    .paths = .{
+        "LICENSE",
+        "build.zig",
+        "build.zig.zon",
+        "lib",
+        "readme.md",
+        "src",
+    },
+    .version = "0.0.1",
+    .fingerprint = 0x9fb4d74a63da6245,
+    .dependencies = .{},
 }
