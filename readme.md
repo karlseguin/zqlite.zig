@@ -1,5 +1,10 @@
 # A thin SQLite wrapper for Zig
 
+## Zig Version
+This is for Zig 0.16.0. Use the [zig-0.15.2](https://github.com/karlseguin/zqlite.zig/tree/zig-0.15.2) branch for Zig 0.15.2 or the [dev](https://github.com/karlseguin/zqlite.zig/tree/dev) which may or may not be up to date with zig dev.
+
+## Example
+
 ```zig
 // good idea to pass EXResCode to get extended result codes (more detailed error codes)
 const flags =  zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
