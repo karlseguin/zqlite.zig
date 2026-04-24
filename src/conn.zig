@@ -1,6 +1,6 @@
 const std = @import("std");
 const Io = std.Io;
-const c = @cImport(@cInclude("sqlite3.h"));
+pub const c = @import("c");
 
 const zqlite = @import("zqlite.zig");
 const Blob = zqlite.Blob;

@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const c = @cImport(@cInclude("sqlite3.h"));
+pub const c = @import("c");
 
 pub const Pool = @import("pool.zig").Pool;
 
