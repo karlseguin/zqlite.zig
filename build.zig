@@ -1,16 +1,19 @@
 const std = @import("std");
+const Translator = @import("translate_c").Translator;
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const translate_c = b.dependency("translate_c", .{});
 
     const default_sqlite3_build = [_][]const u8{"-std=c99"};
     const sqlite3_build = b.option([]const []const u8, "sqlite3", "options to use when compiling sqlite3") orelse &default_sqlite3_build;
 
     const lib_path = b.path("lib");
 
-    const translate_c = b.addTranslateC(.{
-        .root_source_file = b.path("lib/sqlite3.h"),
+    const t: Translator = .init(translate_c, .{
+        .c_source_file = b.path("lib/sqlite3.h"),
         .target = target,
         .optimize = optimize,
     });
@@ -19,19 +22,16 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/zqlite.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{
-                .name = "c",
-                .module = translate_c.createModule(),
-            }
-        },
+        .imports = &.{.{
+            .name = "c",
+            .module = t.mod,
+        }},
     });
 
     const mod_sqlite = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-
     });
     mod_sqlite.addIncludePath(lib_path);
     mod_sqlite.addCSourceFile(.{
