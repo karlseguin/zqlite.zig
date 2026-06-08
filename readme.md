@@ -1,5 +1,10 @@
 # A thin SQLite wrapper for Zig
 
+## Zig Version
+This is for Zig 0.16.0. Use the [zig-0.15.2](https://github.com/karlseguin/zqlite.zig/tree/zig-0.15.2) branch for Zig 0.15.2 or the [dev](https://github.com/karlseguin/zqlite.zig/tree/dev) which may or may not be up to date with zig dev.
+
+## Example
+
 ```zig
 // good idea to pass EXResCode to get extended result codes (more detailed error codes)
 const flags =  zqlite.OpenFlags.Create | zqlite.OpenFlags.EXResCode;
@@ -29,7 +34,7 @@ try conn.exec("insert into test (name) values (?1), (?2)", .{"Leto", "Ghanima"})
 Unless `zqlite.OpenFlags.ReadOnly` is set in the open flags, `zqlite.OpenFlags.ReadWrite` is assumed (in other words, the database opens in read-write by default, and the `ReadOnly` flag must be used to open it in readony mode.)
 
 ## Install
-This library is tested with SQLite3 3.50.4.
+This library is tested with SQLite3 3.53.0.
 
 1) Add zqlite as a dependency in your `build.zig.zon`:
 
@@ -37,7 +42,21 @@ This library is tested with SQLite3 3.50.4.
 zig fetch --save git+https://github.com/karlseguin/zqlite.zig#master
 ```
 
-2)  The library doesn't attempt to link/include SQLite. You're free to do this how you want.
+2) Link libc in your `build.zig`:
+
+```zig
+const exe = b.addExecutable(.{
+        .name = "example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+```
+
+3) The library doesn't attempt to link/include SQLite. You're free to do this how you want.
 
 If you have sqlite3 installed on your system you might get away with just adding this to your build.zig
 
@@ -47,20 +66,19 @@ const zqlite = b.dependency("zqlite", .{
     .optimize = optimize,
 });
 
-exe.linkLibC();
-exe.linkSystemLibrary("sqlite3");
+exe.root_module.linkSystemLibrary("sqlite3", .{});
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
 Alternatively, If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/` folder, you can then:
 
-2) Add this in `build.zig`:
+3) Add this in `build.zig`:
 ```zig
 const zqlite = b.dependency("zqlite", .{
     .target = target,
     .optimize = optimize,
 });
-exe.addCSourceFile(.{
+exe.root_module.addCSourceFile(.{
     .file = b.path("lib/sqlite3.c"),
     .flags = &[_][]const u8{
         "-DSQLITE_DQS=0",
@@ -81,7 +99,6 @@ exe.addCSourceFile(.{
         "-DHAVE_USLEEP=0",
     },
 });
-exe.linkLibC();
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
