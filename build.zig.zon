@@ -13,8 +13,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .translate_c = .{
-            .url = "git+https://codeberg.org/ziglang/translate-c#1b33d1d273f7035a16c45457efdf2afda7cf0925",
-            .hash = "translate_c-0.0.0-Q_BUWrI7BwCBn0jcYDTs1UP047kxSYoFpV6vD6Vuy9Vo",
+            .url = "git+https://codeberg.org/ziglang/translate-c#f94ce1b138c8ad04959de2fea01fc8981cc2ae77",
+            .hash = "translate_c-0.0.0-Q_BUWp84BwD-R_KrWywVjsMETfqkMv4iPdnBUx48FS6y",
         },
     },
 }
