@@ -5,6 +5,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: mlugg/setup-zig@v2
+        with:
+          version: master
       - uses: actions/checkout@v2
       - name: Module test
         run: zig build test
