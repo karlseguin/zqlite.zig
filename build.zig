@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) !void {
 
     const default_sqlite3_build = [_][]const u8{"-std=c99"};
     const sqlite3_build = b.option([]const []const u8, "sqlite3", "options to use when compiling sqlite3") orelse &default_sqlite3_build;
+    const use_llvm = b.option(bool, "use-llvm", "Use Zig's llvm code backend");
 
     const lib_path = b.path("lib");
 
@@ -43,6 +44,7 @@ pub fn build(b: *std.Build) !void {
         .linkage = .static,
         .name = "sqlite",
         .root_module = mod_sqlite,
+        .use_llvm = use_llvm,
     });
     lib_sqlite.installHeadersDirectory(lib_path, "", .{});
 
@@ -51,6 +53,7 @@ pub fn build(b: *std.Build) !void {
     const tests = b.addTest(.{
         .root_module = mod_zqlite,
         .test_runner = .{ .path = b.path("test_runner.zig"), .mode = .simple },
+        .use_llvm = use_llvm,
     });
 
     const run_test = b.addRunArtifact(tests);
