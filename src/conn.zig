@@ -160,8 +160,23 @@ pub const Stmt = struct {
 
     pub fn bind(self: Stmt, values: anytype) !void {
         const stmt = self.stmt;
-        inline for (values, 0..) |value, i| {
-            try _bind(@TypeOf(value), stmt, value, i + 1);
+        const T = @TypeOf(values);
+        switch (@typeInfo(T)) {
+            .@"struct" => |struct_type_info| {
+                inline for (struct_type_info.fields, 1..) |field, field_i| {
+                    const field_value = @field(values, field.name);
+                    const index = _bindParameterIndex(self.stmt, field.name);
+                    if (index > 0) {
+                        try _bind(field.type, stmt, field_value, index);
+                    } else if (struct_type_info.is_tuple) {
+                        try _bind(field.type, stmt, field_value, field_i);
+                    }
+                    // else ignore unused struct fields
+                }
+            },
+            else => inline for (values, 0..) |value, i| {
+                try _bind(@TypeOf(value), stmt, value, i + 1);
+            },
         }
     }
 
@@ -331,6 +346,16 @@ pub const Stmt = struct {
             5 => .null,
             else => .unknown,
         };
+    }
+
+    fn _bindParameterIndex(stmt: *c.sqlite3_stmt, comptime name: []const u8) c_int {
+        if (name.len == 0) return -1;
+
+        inline for (.{ ":", "@", "$" }) |prefix| {
+            const i = c.sqlite3_bind_parameter_index(stmt, prefix ++ name);
+            if (i > 0) return i; // sqlite3 uses 1-based index.
+        }
+        return -1;
     }
 
     fn _bind(comptime T: type, stmt: *c.sqlite3_stmt, value: anytype, bind_index: c_int) !void {
@@ -722,6 +747,33 @@ test "bind null optionals" {
 
     const row = queryLast(conn).?;
     defer row.row.deinit();
+    try t.expectEqual(@as(?i64, null), row.intn);
+    try t.expectEqual(@as(?f64, null), row.realn);
+    try t.expectEqual(@as(?[]const u8, null), row.textn);
+    try t.expectEqual(@as(?[]const u8, null), row.blobn);
+}
+
+test "bind named parameters" {
+    const conn = testDB();
+    defer conn.tryClose() catch unreachable;
+
+    const query_params = .{ .cint_value = -3, .creal_value = 2.2, .ctext_value = "three", .cblob_value = "four", .ignored_value = 3.14 };
+    conn.exec(
+        \\
+        \\  insert into test (cint, creal, ctext, cblob)
+        \\  values (:cint_value, :creal_value, :ctext_value, :cblob_value)
+    , query_params) catch unreachable;
+
+    try t.expectEqual(@as(usize, 1), conn.changes());
+
+    const lastId = conn.lastInsertedRowId();
+    const row = queryLast(conn).?;
+    defer row.row.deinit();
+    try t.expectEqual(lastId, row.id);
+    try t.expectEqual(@as(i64, -3), row.int);
+    try t.expectEqual(@as(f64, 2.2), row.real);
+    try t.expectEqualStrings("three", row.text);
+    try t.expectEqualStrings("four", row.blob);
     try t.expectEqual(@as(?i64, null), row.intn);
     try t.expectEqual(@as(?f64, null), row.realn);
     try t.expectEqual(@as(?[]const u8, null), row.textn);
