@@ -163,13 +163,16 @@ pub const Stmt = struct {
         const T = @TypeOf(values);
         switch (@typeInfo(T)) {
             .@"struct" => |struct_type_info| {
-                inline for (struct_type_info.fields, 1..) |field, field_i| {
+                if (struct_type_info.is_tuple) {
+                    inline for (struct_type_info.fields, 1..) |field, field_i| {
+                        const field_value = @field(values, field.name);
+                        try _bind(field.type, stmt, field_value, field_i);
+                    }
+                } else inline for (struct_type_info.fields) |field| {
                     const field_value = @field(values, field.name);
                     const index = _bindParameterIndex(self.stmt, field.name);
                     if (index > 0) {
                         try _bind(field.type, stmt, field_value, index);
-                    } else if (struct_type_info.is_tuple) {
-                        try _bind(field.type, stmt, field_value, field_i);
                     }
                     // else ignore unused struct fields
                 }
