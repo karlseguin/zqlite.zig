@@ -56,31 +56,24 @@ const exe = b.addExecutable(.{
     });
 ```
 
-3) The library doesn't attempt to link/include SQLite. You're free to do this how you want.
-
-If you have sqlite3 installed on your system you might get away with just adding this to your build.zig
+3) Add the dependency and import in `build.zig`:
 
 ```zig
 const zqlite = b.dependency("zqlite", .{
     .target = target,
     .optimize = optimize,
 });
-
-exe.root_module.linkSystemLibrary("sqlite3", .{});
 exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
-Alternatively, If you download the SQLite amalgamation from [the SQLite download page](https://www.sqlite.org/download.html) and place the `sqlite.c` and `sqlite.h` file in your project's `lib/` folder, you can then:
+By default, the library compiles the bundled SQLite amalgamation (the version listed above) and statically links it. You can pass compile flags to the bundled SQLite via the `sqlite3` option:
 
-3) Add this in `build.zig`:
 ```zig
 const zqlite = b.dependency("zqlite", .{
     .target = target,
     .optimize = optimize,
-});
-exe.root_module.addCSourceFile(.{
-    .file = b.path("lib/sqlite3.c"),
-    .flags = &[_][]const u8{
+    .sqlite3 = @as([]const []const u8, &.{
+        "-std=c99",
         "-DSQLITE_DQS=0",
         "-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1",
         "-DSQLITE_USE_ALLOCA=1",
@@ -96,13 +89,19 @@ exe.root_module.addCSourceFile(.{
         "-DSQLITE_OMIT_SHARED_CACHE",
         "-DSQLITE_OMIT_TRACE=1",
         "-DSQLITE_OMIT_UTF16=1",
-        "-DHAVE_USLEEP=0",
-    },
+    }),
 });
-exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 ```
 
-You can tweak the SQLite build flags for your own needs/platform.
+Alternatively, set the `system_sqlite3` option to `true` to skip the bundled amalgamation and dynamically link your system's SQLite instead:
+
+```zig
+const zqlite = b.dependency("zqlite", .{
+    .target = target,
+    .optimize = optimize,
+    .system_sqlite3 = true,
+});
+```
 
 # Conn
 The `Conn` type returned by `open` has the following functions:
