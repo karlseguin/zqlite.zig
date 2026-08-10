@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) !void {
             .{
                 .name = "c",
                 .module = translate_c.createModule(),
-            }
+            },
         },
     });
 
@@ -43,7 +43,6 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-
         });
         mod_sqlite.addIncludePath(lib_path);
         mod_sqlite.addCSourceFile(.{
